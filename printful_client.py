@@ -88,15 +88,10 @@ class PrintfulClient:
     def estimate_costs(self, items: List[Dict]) -> Dict:
         """Get cost estimates for items"""
         data = {"items": items}
-        return self._make_request("POST", "/costs/estimate", data=data)
+        return self._make_request("POST", "/orders/estimate", data=data)
 
-    def calculate_taxes(self, recipient: Dict, items: List[Dict]) -> Dict:
-        """Calculate taxes for an order based on recipient address and items"""
-        data = {
-            "recipient": recipient,
-            "items": items
-        }
-        return self._make_request("POST", "/taxes/calculate", data=data)
+    # Removed tax calculation as it's not available in all Printful plans
+    # Taxes are typically included in the order estimate
 
     def confirm_order(self, order_id: int) -> Dict:
         """Confirm an order for fulfillment"""

@@ -512,6 +512,9 @@ function showShippingCalculator() {
         const breakdownDiv = document.getElementById('costBreakdown');
         const contentDiv = document.getElementById('breakdownContent');
 
+        const shippingNote = costData.breakdown.shipping_note ? ' (Estimated)' : '';
+        const taxNote = costData.breakdown.tax_note ? ' (Estimated)' : '';
+
         contentDiv.innerHTML = `
             <div style="display: grid; gap: 8px; margin-bottom: 16px;">
                 <div style="display: flex; justify-content: space-between;">
@@ -519,11 +522,11 @@ function showShippingCalculator() {
                     <span>$${costData.breakdown.subtotal.toFixed(2)}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between;">
-                    <span>Shipping:</span>
+                    <span>Shipping${shippingNote}:</span>
                     <span>$${costData.breakdown.shipping.toFixed(2)}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between;">
-                    <span>Taxes:</span>
+                    <span>Taxes${taxNote}:</span>
                     <span>$${costData.breakdown.taxes.toFixed(2)}</span>
                 </div>
                 <div style="border-top: 1px solid #f0f0f0; padding-top: 8px; margin-top: 8px; display: flex; justify-content: space-between; font-weight: 700; font-size: 18px;">
