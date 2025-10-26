@@ -56,6 +56,7 @@ python main.py
 - `GET /api/stripe-config` - Publishable Stripe key for the client
 - `POST /api/create-checkout-session` - Create a Stripe Checkout session for the current cart
 - `POST /api/checkout-success` - Finalize successful Stripe payments and trigger Printful fulfillment
+- `GET /api/countries` - List Printful-supported destination countries for the checkout form
 - Printful helper endpoints: `/api/sync-products`, `/api/store-info`, `/api/catalog-products`, `/api/store-products`, `/api/create-order`, `/api/confirm-order/{order_id}`, `/api/order-status/{order_id}`
 
 ## Project Structure

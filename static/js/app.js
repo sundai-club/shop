@@ -7,6 +7,8 @@ let lastRecipientDetails = null;
 let lastCalculatedOrder = null;
 let checkoutButtonEl = null;
 let checkoutButtonOriginalLabel = 'Proceed to Checkout';
+let printfulCountries = [];
+let countriesLoaded = false;
 
 // DOM elements
 const productsGrid = document.getElementById('productsGrid');
@@ -26,6 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadCart();
     setupEventListeners();
     initializeStripe();
+    loadCountries();
 });
 
 // Setup event listeners
@@ -51,6 +54,45 @@ async function initializeStripe() {
     }
 }
 
+async function loadCountries() {
+    const fallbackCountries = [
+        { code: 'US', name: 'United States' },
+        { code: 'CA', name: 'Canada' },
+        { code: 'GB', name: 'United Kingdom' },
+        { code: 'AU', name: 'Australia' },
+        { code: 'DE', name: 'Germany' }
+    ];
+
+    try {
+        const response = await fetch('/api/countries');
+        if (!response.ok) {
+            throw new Error('Failed to load countries');
+        }
+        const data = await response.json();
+        printfulCountries = Array.isArray(data.countries) && data.countries.length > 0
+            ? data.countries
+            : fallbackCountries;
+    } catch (error) {
+        console.warn('Falling back to default country list:', error);
+        printfulCountries = fallbackCountries;
+    } finally {
+        countriesLoaded = true;
+    }
+}
+
+function getCountryOptionsMarkup(selectedCode = 'US') {
+    const countries = printfulCountries.length > 0
+        ? printfulCountries
+        : [{ code: 'US', name: 'United States' }];
+
+    return countries
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map(country => {
+            const isSelected = country.code === selectedCode;
+            return `<option value="${country.code}" ${isSelected ? 'selected' : ''}>${country.name}</option>`;
+        })
+        .join('');
+}
 // Load products from API
 async function loadProducts() {
     try {
@@ -444,7 +486,11 @@ document.querySelector('.checkout-btn').addEventListener('click', () => {
 });
 
 // Show shipping calculator modal
-function showShippingCalculator() {
+async function showShippingCalculator() {
+    if (!countriesLoaded) {
+        await loadCountries();
+    }
+
     const existingModal = document.querySelector('[data-checkout-modal="true"]');
     if (existingModal) {
         existingModal.remove();
@@ -468,6 +514,9 @@ function showShippingCalculator() {
         align-items: center;
         justify-content: center;
     `;
+
+    const selectedCountry = lastRecipientDetails?.country || 'US';
+    const countryOptions = getCountryOptionsMarkup(selectedCountry);
 
     modal.innerHTML = `
         <div style="background: white; padding: 24px; border-radius: 8px; max-width: 500px; width: 90%; max-height: 95vh; overflow-y: auto;">
@@ -500,7 +549,9 @@ function showShippingCalculator() {
                     </div>
                     <div>
                         <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #0a0a0a;">Country</label>
-                        <input type="text" name="country" value="US" required style="width: 100%; padding: 12px; border: 1px solid #f0f0f0; border-radius: 4px;">
+                        <select name="country" required style="width: 100%; padding: 12px; border: 1px solid #f0f0f0; border-radius: 4px;">
+                            ${countryOptions}
+                        </select>
                     </div>
                 </div>
                 <div style="display: flex; gap: 12px; justify-content: flex-end;">
@@ -522,12 +573,22 @@ function showShippingCalculator() {
         }
     });
 
+    const form = modal.querySelector('#shippingForm');
+    if (lastRecipientDetails) {
+        Object.entries(lastRecipientDetails).forEach(([key, value]) => {
+            if (!value) return;
+            const field = form.elements.namedItem(key);
+            if (field) {
+                field.value = value;
+            }
+        });
+    }
+
     // Handle form submission
     document.getElementById('shippingForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
         const recipient = Object.fromEntries(formData.entries());
-        recipient.country = (recipient.country || 'US').toUpperCase();
 
         try {
             const response = await fetch('/api/calculate-total-cost', {

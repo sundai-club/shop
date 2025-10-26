@@ -90,6 +90,10 @@ class PrintfulClient:
         data = {"items": items}
         return self._make_request("POST", "/orders/estimate", data=data)
 
+    def get_countries(self) -> Dict:
+        """Retrieve available countries from Printful"""
+        return self._make_request("GET", "/countries")
+
     # Removed tax calculation as it's not available in all Printful plans
     # Taxes are typically included in the order estimate
 

@@ -102,6 +102,7 @@ class CheckoutSuccessRequest(BaseModel):
 
 # Cache for products
 products_cache = []
+countries_cache: List[Dict[str, str]] = []
 
 def build_printful_recipient(recipient: RecipientInfo) -> Dict[str, Any]:
     """Map the recipient info into the structure Printful expects."""
@@ -229,6 +230,26 @@ def compute_order_details(cart: List[Dict[str, Any]], recipient: RecipientInfo) 
         "printful_items": printful_items,
         "cart_entries": cart_entries
     }
+
+def get_available_countries() -> List[Dict[str, str]]:
+    """Retrieve and cache the list of countries supported by Printful."""
+    global countries_cache
+    if countries_cache:
+        return countries_cache
+
+    try:
+        countries_response = printful_client.get_countries()
+        results = countries_response.get("result", [])
+        countries_cache = [
+            {"code": country.get("code"), "name": country.get("name")}
+            for country in results
+            if country.get("code") and country.get("name")
+        ]
+    except Exception as exc:
+        print(f"Failed to load countries from Printful: {exc}")
+        countries_cache = []
+
+    return countries_cache
 
 def get_user_cart(request: Request) -> List[Dict]:
     """Get or create user's cart from session"""
@@ -419,6 +440,15 @@ async def get_product(product_id: int):
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     return product
+
+@app.get("/api/countries")
+async def get_countries():
+    countries = get_available_countries()
+    if not countries:
+        raise HTTPException(status_code=500, detail="Failed to load countries from Printful")
+
+    sorted_countries = sorted(countries, key=lambda c: c["name"])
+    return {"countries": sorted_countries}
 
 @app.post("/api/sync-products")
 async def sync_products():
