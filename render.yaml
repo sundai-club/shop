@@ -1,0 +1,29 @@
+services:
+  # Web Service
+  - type: web
+    name: sundai-merch-shop
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+    # Auto-scaling
+    scaling:
+      minInstances: 1
+      maxInstances: 3
+      targetCPUPercent: 70
+      targetMemoryPercent: 80
+    # Build optimizations
+    build:
+      pip:
+        cache: true
+
+# Databases (commented out - uncomment if needed)
+# databases:
+#   - name: sundai-merch-db
+#     databaseName: merch_shop
+#     user: merch_user
+#     plan: free
