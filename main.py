@@ -1,6 +1,8 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.middleware import Middleware
+from fastapi.middleware.sessions import SessionMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import json
@@ -8,6 +10,9 @@ import os
 from printful_client import printful_client
 
 app = FastAPI(title="SundAI Merch Shop", description="Simple merchandise shop for SundAI")
+
+# Add session middleware
+app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "your-secret-key-change-in-production"))
 
 # Serve static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -34,6 +39,12 @@ class CartItem(BaseModel):
 
 # Cache for products
 products_cache = []
+
+def get_user_cart(request: Request) -> List[Dict]:
+    """Get or create user's cart from session"""
+    if "cart" not in request.session:
+        request.session["cart"] = []
+    return request.session["cart"]
 
 def convert_printful_to_product(printful_product: Dict, fetch_variants: bool = True) -> Product:
     """Convert Printful product to our Product model"""
@@ -182,8 +193,6 @@ def get_products_from_printful() -> List[Product]:
         print(f"Error fetching products from Printful: {e}")
         return []
 
-# In-memory cart (in production, use a database)
-cart = []
 
 @app.get("/")
 async def read_root():
@@ -227,10 +236,13 @@ async def sync_products():
         raise HTTPException(status_code=500, detail=f"Failed to sync products: {str(e)}")
 
 @app.post("/api/cart")
-async def add_to_cart(item: CartItem):
+async def add_to_cart(item: CartItem, request: Request):
     global products_cache
     if not products_cache:
         products_cache = get_products_from_printful()
+
+    # Get user's cart from session
+    cart = get_user_cart(request)
 
     # Check if product exists
     product = next((p for p in products_cache if p.id == item.product_id), None)
@@ -258,23 +270,29 @@ async def add_to_cart(item: CartItem):
         "variant_price": item.variant_price,
         "product": product.model_dump()
     })
+
+    # Save cart to session
+    request.session["cart"] = cart
     return {"message": "Item added to cart"}
 
 @app.get("/api/cart")
-async def get_cart():
-    return cart
+async def get_cart(request: Request):
+    return get_user_cart(request)
 
 @app.delete("/api/cart/{item_id}")
-async def remove_from_cart(item_id: int):
-    global cart
+async def remove_from_cart(item_id: int, request: Request):
+    cart = get_user_cart(request)
     if 0 <= item_id < len(cart):
         cart.pop(item_id)
+        # Save updated cart to session
+        request.session["cart"] = cart
         return {"message": "Item removed from cart"}
     raise HTTPException(status_code=404, detail="Cart item not found")
 
 @app.post("/api/estimate-shipping")
-async def estimate_shipping(recipient: Dict[str, str]):
+async def estimate_shipping(recipient: Dict[str, str], request: Request):
     """Estimate shipping rates for cart items"""
+    cart = get_user_cart(request)
     if not cart:
         raise HTTPException(status_code=400, detail="Cart is empty")
 
@@ -297,8 +315,9 @@ async def estimate_shipping(recipient: Dict[str, str]):
         raise HTTPException(status_code=500, detail=f"Failed to get shipping rates: {str(e)}")
 
 @app.post("/api/estimate-costs")
-async def estimate_costs():
+async def estimate_costs(request: Request):
     """Estimate total costs for cart items"""
+    cart = get_user_cart(request)
     if not cart:
         raise HTTPException(status_code=400, detail="Cart is empty")
 
@@ -321,7 +340,7 @@ async def estimate_costs():
         raise HTTPException(status_code=500, detail=f"Failed to estimate costs: {str(e)}")
 
 @app.post("/api/calculate-total-cost")
-async def calculate_total_cost(order_data: Dict[str, Any]):
+async def calculate_total_cost(order_data: Dict[str, Any], request: Request):
     """
     Calculate total order cost including products, shipping, and taxes
 
@@ -338,6 +357,7 @@ async def calculate_total_cost(order_data: Dict[str, Any]):
         "shipping_method": "STANDARD" // optional
     }
     """
+    cart = get_user_cart(request)
     if not cart:
         raise HTTPException(status_code=400, detail="Cart is empty")
 
@@ -355,7 +375,7 @@ async def calculate_total_cost(order_data: Dict[str, Any]):
         "address1": recipient.get("address1", ""),
         "city": recipient.get("city", ""),
         "state": recipient.get("state", ""),
-        "country": recipient.get("country", "US"),
+        "country_code": recipient.get("country", "US"),  # Printful expects country_code, not country
         "zip": recipient.get("zip", "")
     }
 
@@ -487,9 +507,9 @@ async def get_order_status(order_id: int):
         raise HTTPException(status_code=500, detail=f"Failed to get order status: {str(e)}")
 
 @app.post("/api/create-order")
-async def create_order(order_data: Dict[str, Any]):
+async def create_order(order_data: Dict[str, Any], request: Request):
     """Create an order in Printful"""
-    global cart
+    cart = get_user_cart(request)
 
     if not cart:
         raise HTTPException(status_code=400, detail="Cart is empty")
@@ -517,7 +537,7 @@ async def create_order(order_data: Dict[str, Any]):
     try:
         order = printful_client.create_order(printful_order)
         # Clear cart after successful order creation
-        cart = []
+        request.session["cart"] = []
         return {
             "message": "Order created successfully",
             "order_id": order.get("result", {}).get("id"),
