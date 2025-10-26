@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Confirmed | SundAI Merch Shop</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background: #f9f9f9;
+            color: #0a0a0a;
+            font-family: 'Inter', sans-serif;
+        }
+        .status-container {
+            max-width: 520px;
+            margin: 80px auto;
+            background: #ffffff;
+            padding: 32px;
+            border-radius: 12px;
+            box-shadow: 0 20px 40px rgba(10, 10, 10, 0.08);
+            text-align: center;
+        }
+        .status-container h1 {
+            margin-bottom: 12px;
+            font-size: 28px;
+        }
+        .status-container p {
+            margin-bottom: 24px;
+            line-height: 1.6;
+        }
+        .order-details {
+            background: #f4f4f4;
+            padding: 16px;
+            border-radius: 8px;
+            text-align: left;
+            font-size: 15px;
+            line-height: 1.6;
+            margin-bottom: 24px;
+        }
+        .status-link {
+            display: inline-block;
+            padding: 12px 24px;
+            background: #0a0a0a;
+            color: #ffffff;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .status-link:hover {
+            background: #1a1a1a;
+        }
+        @media (max-width: 640px) {
+            .status-container {
+                margin: 48px 16px;
+                padding: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="status-container">
+        <h1>Thanks for your purchase!</h1>
+        <p id="statusMessage">Finalizing your order…</p>
+        <div id="orderDetails" class="order-details" style="display: none;"></div>
+        <a href="/" class="status-link">Return to the shop</a>
+    </div>
+
+    <script>
+        (async function finalizeOrder() {
+            const statusMessage = document.getElementById('statusMessage');
+            const orderDetails = document.getElementById('orderDetails');
+            const params = new URLSearchParams(window.location.search);
+            const sessionId = params.get('session_id');
+
+            if (!sessionId) {
+                statusMessage.textContent = 'Missing checkout session details. Please contact support if you were charged.';
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/checkout-success', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ session_id: sessionId })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    const message = errorData.detail || 'We were unable to complete your order automatically. Please contact support.';
+                    statusMessage.textContent = message;
+                    return;
+                }
+
+                const data = await response.json();
+                statusMessage.textContent = 'Your order is confirmed and will be fulfilled shortly!';
+
+                const orderResult = data.order?.result || data.order;
+                const orderId = orderResult?.id || orderResult?.order?.id || data.order_id;
+                const orderStatus = orderResult?.status || orderResult?.order?.status;
+                const summary = data.summary || data.order?.summary;
+
+                if (orderId || summary) {
+                    orderDetails.style.display = 'block';
+                    const summaryLines = [];
+                    if (orderId) {
+                        summaryLines.push(`<div><strong>Printful Order ID:</strong> ${orderId}</div>`);
+                    }
+                    if (orderStatus) {
+                        summaryLines.push(`<div><strong>Status:</strong> ${orderStatus}</div>`);
+                    }
+                    if (summary) {
+                        const formatMoney = (value) => typeof value === 'number' ? value.toFixed(2) : null;
+                        const subtotal = formatMoney(summary.subtotal);
+                        const shipping = formatMoney(summary.shipping);
+                        const tax = formatMoney(summary.tax);
+                        const total = formatMoney(summary.total);
+                        summaryLines.push('<div><strong>Order Summary</strong></div>');
+                        if (subtotal) summaryLines.push(`<div>Subtotal: $${subtotal}</div>`);
+                        if (shipping) summaryLines.push(`<div>Shipping: $${shipping}</div>`);
+                        if (tax) summaryLines.push(`<div>Tax: $${tax}</div>`);
+                        if (total) summaryLines.push(`<div>Total: $${total}</div>`);
+                    }
+                    orderDetails.innerHTML = summaryLines.join('');
+                }
+            } catch (error) {
+                console.error('Failed to finalize order:', error);
+                statusMessage.textContent = 'Something went wrong while completing your order. Please contact support.';
+            }
+        })();
+    </script>
+</body>
+</html>

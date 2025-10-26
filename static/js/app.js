@@ -1,6 +1,12 @@
 // Global state
 let products = [];
 let cart = [];
+let stripeInstance = null;
+let stripePublishableKey = null;
+let lastRecipientDetails = null;
+let lastCalculatedOrder = null;
+let checkoutButtonEl = null;
+let checkoutButtonOriginalLabel = 'Proceed to Checkout';
 
 // DOM elements
 const productsGrid = document.getElementById('productsGrid');
@@ -19,6 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadProducts();
     loadCart();
     setupEventListeners();
+    initializeStripe();
 });
 
 // Setup event listeners
@@ -26,8 +33,23 @@ function setupEventListeners() {
     cartBtn.addEventListener('click', openCart);
     closeCart.addEventListener('click', closeCartSidebar);
     overlay.addEventListener('click', closeCartSidebar);
+}
 
-  }
+async function initializeStripe() {
+    try {
+        const response = await fetch('/api/stripe-config');
+        if (!response.ok) {
+            throw new Error('Failed to load Stripe configuration');
+        }
+        const data = await response.json();
+        if (data.publishableKey) {
+            stripePublishableKey = data.publishableKey;
+            stripeInstance = Stripe(stripePublishableKey);
+        }
+    } catch (error) {
+        console.warn('Stripe configuration unavailable:', error);
+    }
+}
 
 // Load products from API
 async function loadProducts() {
@@ -423,7 +445,17 @@ document.querySelector('.checkout-btn').addEventListener('click', () => {
 
 // Show shipping calculator modal
 function showShippingCalculator() {
+    const existingModal = document.querySelector('[data-checkout-modal="true"]');
+    if (existingModal) {
+        existingModal.remove();
+    }
+
+    checkoutButtonEl = null;
+    lastRecipientDetails = null;
+    lastCalculatedOrder = null;
+
     const modal = document.createElement('div');
+    modal.dataset.checkoutModal = 'true';
     modal.style.cssText = `
         position: fixed;
         top: 0;
@@ -444,6 +476,10 @@ function showShippingCalculator() {
                 <div style="margin-bottom: 16px;">
                     <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #0a0a0a;">Full Name</label>
                     <input type="text" name="name" required style="width: 100%; padding: 12px; border: 1px solid #f0f0f0; border-radius: 4px;">
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #0a0a0a;">Email</label>
+                    <input type="email" name="email" required style="width: 100%; padding: 12px; border: 1px solid #f0f0f0; border-radius: 4px;">
                 </div>
                 <div style="margin-bottom: 16px;">
                     <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #0a0a0a;">Address</label>
@@ -468,7 +504,7 @@ function showShippingCalculator() {
                     </div>
                 </div>
                 <div style="display: flex; gap: 12px; justify-content: flex-end;">
-                    <button type="button" onclick="this.closest('div[style*=position]').remove()" style="padding: 12px 24px; border: 1px solid #f0f0f0; background: white; cursor: pointer; border-radius: 4px;">Cancel</button>
+                    <button type="button" onclick="closeCheckoutModal(this)" style="padding: 12px 24px; border: 1px solid #f0f0f0; background: white; cursor: pointer; border-radius: 4px;">Cancel</button>
                     <button type="submit" style="padding: 12px 24px; background: #00FFCC; color: #0a0a0a; border: none; cursor: pointer; border-radius: 4px; font-weight: 600;">Calculate Total</button>
                 </div>
             </form>
@@ -480,12 +516,18 @@ function showShippingCalculator() {
     `;
 
     document.body.appendChild(modal);
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            closeCheckoutModal();
+        }
+    });
 
     // Handle form submission
     document.getElementById('shippingForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
         const recipient = Object.fromEntries(formData.entries());
+        recipient.country = (recipient.country || 'US').toUpperCase();
 
         try {
             const response = await fetch('/api/calculate-total-cost', {
@@ -498,6 +540,7 @@ function showShippingCalculator() {
 
             if (response.ok) {
                 const costData = await response.json();
+                lastRecipientDetails = recipient;
                 displayCostBreakdown(costData);
             } else {
                 throw new Error('Failed to calculate costs');
@@ -536,18 +579,93 @@ function showShippingCalculator() {
                     <span style="color: #0a0a0a;">$${costData.total.toFixed(2)}</span>
                 </div>
             </div>
-            <button onclick="proceedToCheckout(${costData.total.toFixed(2)})" style="width: 100%; padding: 16px; background: #0a0a0a; color: white; border: none; cursor: pointer; border-radius: 4px; font-weight: 600;">
+            <button type="button" data-role="proceed-checkout" style="width: 100%; padding: 16px; background: #0a0a0a; color: white; border: none; cursor: pointer; border-radius: 4px; font-weight: 600;">
                 Proceed to Checkout
             </button>
         `;
 
         breakdownDiv.style.display = 'block';
+        lastCalculatedOrder = costData;
+        checkoutButtonEl = contentDiv.querySelector('button[data-role="proceed-checkout"]');
+        if (checkoutButtonEl) {
+            checkoutButtonOriginalLabel = checkoutButtonEl.textContent || 'Proceed to Checkout';
+            checkoutButtonEl.disabled = false;
+            checkoutButtonEl.addEventListener('click', proceedToCheckout);
+        }
     }
 }
 
-// Proceed to checkout (placeholder for actual payment integration)
-function proceedToCheckout(total) {
-    showNotification(`Proceeding to checkout for $${total} - Payment integration needed!`);
-    // Close the modal
-    document.querySelector('div[style*="position: fixed"]').remove();
+function setCheckoutButtonState(disabled, label) {
+    if (!checkoutButtonEl) {
+        return;
+    }
+    checkoutButtonEl.disabled = disabled;
+    if (label) {
+        checkoutButtonEl.textContent = label;
+    }
+}
+
+async function proceedToCheckout() {
+    if (!stripePublishableKey) {
+        showNotification('Checkout is currently unavailable. Please try again later.', 'error');
+        return;
+    }
+
+    if (!lastRecipientDetails || !lastCalculatedOrder) {
+        showNotification('Please calculate your total before proceeding to checkout.', 'error');
+        return;
+    }
+
+    if (!stripeInstance) {
+        stripeInstance = Stripe(stripePublishableKey);
+    }
+
+    setCheckoutButtonState(true, 'Redirecting...');
+
+    try {
+        const response = await fetch('/api/create-checkout-session', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ recipient: lastRecipientDetails })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            const message = errorData.detail || 'Failed to start checkout. Please try again.';
+            throw new Error(message);
+        }
+
+        const data = await response.json();
+
+        if (data.publishableKey && data.publishableKey !== stripePublishableKey) {
+            stripePublishableKey = data.publishableKey;
+            stripeInstance = Stripe(stripePublishableKey);
+        }
+
+        const redirectResult = await stripeInstance.redirectToCheckout({
+            sessionId: data.checkout_session_id
+        });
+
+        if (redirectResult?.error) {
+            throw new Error(redirectResult.error.message);
+        }
+    } catch (error) {
+        console.error('Error starting checkout:', error);
+        showNotification(error.message || 'Failed to start checkout. Please try again.', 'error');
+        setCheckoutButtonState(false, checkoutButtonOriginalLabel);
+    }
+}
+
+function closeCheckoutModal(trigger) {
+    const modal = trigger
+        ? trigger.closest('[data-checkout-modal="true"]')
+        : document.querySelector('[data-checkout-modal="true"]');
+    if (modal) {
+        modal.remove();
+    }
+    checkoutButtonEl = null;
+    lastCalculatedOrder = null;
+    lastRecipientDetails = null;
 }

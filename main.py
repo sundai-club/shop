@@ -3,14 +3,24 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from typing import List, Optional, Dict, Any
 import json
 import os
 import uuid
+import stripe
 from printful_client import printful_client
 
 app = FastAPI(title="SundAI Merch Shop", description="Simple merchandise shop for SundAI")
+
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
+stripe_publishable_key = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
+if not stripe.api_key:
+    print("Warning: STRIPE_SECRET_KEY is not set. Stripe checkout will be unavailable.")
+if not stripe_publishable_key:
+    print("Warning: STRIPE_PUBLISHABLE_KEY is not set. Client checkout will be unavailable.")
+
+ESTIMATED_TAX_RATE = float(os.getenv("ESTIMATED_TAX_RATE", "0.085"))
 
 # Add CORS middleware to handle cross-origin requests
 app.add_middleware(
@@ -54,8 +64,129 @@ class CartItem(BaseModel):
     variant_id: Optional[int] = None
     variant_price: Optional[float] = None
 
+class RecipientInfo(BaseModel):
+    name: str
+    address1: str
+    city: str
+    state: str
+    zip: str
+    country: str = "US"
+    email: Optional[str] = None
+    phone: Optional[str] = None
+
+class CreateCheckoutSessionRequest(BaseModel):
+    recipient: RecipientInfo
+
+class CheckoutSuccessRequest(BaseModel):
+    session_id: str
+
 # Cache for products
 products_cache = []
+
+def build_printful_recipient(recipient: RecipientInfo) -> Dict[str, Any]:
+    """Map the recipient info into the structure Printful expects."""
+    country_code = recipient.country or "US"
+    recipient_payload: Dict[str, Any] = {
+        "name": recipient.name,
+        "address1": recipient.address1,
+        "city": recipient.city,
+        "state_code": recipient.state,
+        "zip": recipient.zip,
+        "country_code": country_code
+    }
+    if recipient.email:
+        recipient_payload["email"] = recipient.email
+    if recipient.phone:
+        recipient_payload["phone"] = recipient.phone
+    return recipient_payload
+
+def compute_order_details(cart: List[Dict[str, Any]], recipient: RecipientInfo) -> Dict[str, Any]:
+    """Prepare order details including totals and shipping using Printful data."""
+    if not cart:
+        raise HTTPException(status_code=400, detail="Cart is empty")
+
+    global products_cache
+    if not products_cache:
+        products_cache = get_products_from_printful()
+
+    printful_items = []
+    cart_entries = []
+    subtotal = 0.0
+
+    for cart_item in cart:
+        variant_id = cart_item.get("variant_id")
+        if not variant_id:
+            continue
+
+        product = next((p for p in products_cache if p.id == cart_item["product_id"]), None)
+        unit_price = cart_item.get("variant_price")
+        if unit_price is None and product:
+            unit_price = product.price
+
+        if unit_price is None:
+            continue
+
+        quantity = cart_item.get("quantity", 1)
+        subtotal += unit_price * quantity
+
+        printful_items.append({
+            "variant_id": variant_id,
+            "quantity": quantity
+        })
+
+        cart_entries.append({
+            "product_id": cart_item["product_id"],
+            "variant_id": variant_id,
+            "quantity": quantity,
+            "unit_price": unit_price,
+            "size": cart_item.get("size"),
+            "name": product.name if product else f"Product {cart_item['product_id']}"
+        })
+
+    if not printful_items:
+        raise HTTPException(status_code=400, detail="No valid items in cart")
+
+    printful_recipient = build_printful_recipient(recipient)
+
+    shipping_rates: List[Dict[str, Any]] = []
+    shipping_rate: Dict[str, Any] = {}
+    shipping_cost = 0.0
+    shipping_note = ""
+
+    try:
+        rates_response = printful_client.get_shipping_rates(printful_recipient, printful_items)
+        shipping_rates = rates_response.get("result", [])
+        if shipping_rates:
+            shipping_rate = shipping_rates[0]
+            shipping_cost = float(shipping_rate.get("rate", 0) or 0)
+        else:
+            shipping_note = "Estimated"
+            shipping_cost = 9.99
+    except Exception as exc:
+        print(f"Error retrieving shipping rates: {exc}")
+        shipping_rates = []
+        shipping_rate = {}
+        shipping_note = "Estimated"
+        shipping_cost = 9.99
+
+    tax_amount = subtotal * ESTIMATED_TAX_RATE
+    tax_note = "Estimated"
+
+    total_cost = subtotal + shipping_cost + tax_amount
+
+    return {
+        "subtotal": round(subtotal, 2),
+        "shipping_cost": round(shipping_cost, 2),
+        "shipping_note": shipping_note,
+        "tax_amount": round(tax_amount, 2),
+        "tax_note": tax_note,
+        "total": round(total_cost, 2),
+        "printful_recipient": printful_recipient,
+        "shipping_rates": shipping_rates,
+        "selected_shipping_rate": shipping_rate,
+        "printful_items": printful_items,
+        "cart_entries": cart_entries
+    }
 
 def get_user_cart(request: Request) -> List[Dict]:
     """Get or create user's cart from session"""
@@ -216,6 +347,14 @@ def get_products_from_printful() -> List[Product]:
 @app.get("/")
 async def read_root():
     return FileResponse("static/index.html")
+
+@app.get("/checkout-success")
+async def checkout_success_page():
+    return FileResponse("static/checkout-success.html")
+
+@app.get("/checkout-cancel")
+async def checkout_cancel_page():
+    return FileResponse("static/checkout-cancel.html")
 
 @app.get("/health")
 async def health_check():
@@ -399,97 +538,208 @@ async def calculate_total_cost(order_data: Dict[str, Any], request: Request):
     if not cart:
         raise HTTPException(status_code=400, detail="Cart is empty")
 
-    recipient = order_data.get("recipient")
-    if not recipient:
+    recipient_payload = order_data.get("recipient")
+    if not recipient_payload:
         raise HTTPException(status_code=400, detail="Recipient information is required")
 
-    # Ensure recipient has required fields for Printful API
-    if not recipient.get("country"):
-        recipient["country"] = "US"
-
-    # Normalize the recipient data for Printful API
-    printful_recipient = {
-        "name": recipient.get("name", ""),
-        "address1": recipient.get("address1", ""),
-        "city": recipient.get("city", ""),
-        "state": recipient.get("state", ""),
-        "country_code": recipient.get("country", "US"),  # Printful expects country_code, not country
-        "zip": recipient.get("zip", "")
-    }
-
-    print(f"Recipient data for shipping: {printful_recipient}")
-
-    # Prepare items for Printful API
-    items = []
-    total_retail_price = 0.0
-
-    for cart_item in cart:
-        if cart_item.get("variant_id"):
-            items.append({
-                "variant_id": cart_item["variant_id"],
-                "quantity": cart_item["quantity"]
-            })
-            # Calculate total retail price from cart
-            item_price = cart_item.get("variant_price") or cart_item["product"]["price"]
-            total_retail_price += item_price * cart_item["quantity"]
-
-    print(f"Items for shipping calculation: {items}")
-
-    if not items:
-        raise HTTPException(status_code=400, detail="No valid items in cart")
+    try:
+        recipient_info = RecipientInfo(**recipient_payload)
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid recipient information: {exc.errors()}") from exc
 
     try:
-        # Get shipping rates first
-        shipping_result = printful_client.get_shipping_rates(printful_recipient, items)
-        shipping_rates = shipping_result.get("result", [])
+        order_details = compute_order_details(cart, recipient_info)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to calculate total cost: {str(exc)}") from exc
 
-        # Get shipping cost (use first available rate or default)
-        shipping_cost = 0
-        if shipping_rates:
-            # Use the first (usually standard) shipping rate
-            shipping_cost = shipping_rates[0].get("rate", 0)
+    return {
+        "breakdown": {
+            "subtotal": order_details["subtotal"],
+            "shipping": order_details["shipping_cost"],
+            "shipping_note": order_details["shipping_note"],
+            "taxes": order_details["tax_amount"],
+            "tax_note": order_details["tax_note"]
+        },
+        "total": order_details["total"],
+        "currency": "USD",
+        "available_shipping_rates": order_details["shipping_rates"],
+        "selected_shipping_rate": order_details["selected_shipping_rate"]
+    }
 
-        # For now, calculate taxes as a simple estimate (US average ~8.5%)
-        # In a real implementation, you'd use a tax service or Printful's tax calculation if available
-        tax_rate = 0.085  # 8.5% estimated tax rate
-        tax_amount = total_retail_price * tax_rate
+@app.get("/api/stripe-config")
+async def get_stripe_config():
+    """Expose Stripe publishable key to the frontend."""
+    if not stripe_publishable_key:
+        raise HTTPException(status_code=500, detail="Stripe publishable key is not configured")
+    return {"publishableKey": stripe_publishable_key}
 
-        # Calculate total
-        total_cost = total_retail_price + shipping_cost + tax_amount
+@app.post("/api/create-checkout-session")
+async def create_checkout_session(payload: CreateCheckoutSessionRequest, request: Request):
+    """Create a Stripe checkout session for the current cart."""
+    if not stripe.api_key or not stripe_publishable_key:
+        raise HTTPException(status_code=500, detail="Stripe credentials are not configured")
 
-        return {
-            "breakdown": {
-                "subtotal": round(total_retail_price, 2),
-                "shipping": round(shipping_cost, 2),
-                "taxes": round(tax_amount, 2),
-                "tax_note": "Estimated"
+    cart = get_user_cart(request)
+    if not cart:
+        raise HTTPException(status_code=400, detail="Cart is empty")
+
+    try:
+        order_details = compute_order_details(cart, payload.recipient)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to prepare order: {str(exc)}") from exc
+
+    line_items = []
+    for entry in order_details["cart_entries"]:
+        unit_amount = int(round(entry["unit_price"] * 100))
+        if unit_amount <= 0:
+            continue
+
+        product_data = {
+            "name": entry["name"],
+        }
+        if entry.get("size"):
+            product_data["description"] = f"Size: {entry['size']}"
+
+        line_items.append({
+            "price_data": {
+                "currency": "usd",
+                "unit_amount": unit_amount,
+                "product_data": product_data
             },
-            "total": round(total_cost, 2),
-            "currency": "USD",
-            "available_shipping_rates": shipping_rates
+            "quantity": entry["quantity"]
+        })
+
+    if order_details["shipping_cost"] > 0:
+        line_items.append({
+            "price_data": {
+                "currency": "usd",
+                "unit_amount": int(round(order_details["shipping_cost"] * 100)),
+                "product_data": {"name": "Shipping"}
+            },
+            "quantity": 1
+        })
+
+    if order_details["tax_amount"] > 0:
+        line_items.append({
+            "price_data": {
+                "currency": "usd",
+                "unit_amount": int(round(order_details["tax_amount"] * 100)),
+                "product_data": {"name": "Taxes"}
+            },
+            "quantity": 1
+        })
+
+    if not line_items:
+        raise HTTPException(status_code=400, detail="Unable to create checkout session without priced items")
+
+    base_url = str(request.base_url).rstrip("/")
+    success_url = f"{base_url}/checkout-success?session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"{base_url}/checkout-cancel"
+
+    session_kwargs: Dict[str, Any] = {
+        "mode": "payment",
+        "line_items": line_items,
+        "success_url": success_url,
+        "cancel_url": cancel_url,
+        "client_reference_id": request.session.get("session_id"),
+        "metadata": {
+            "app_session_id": request.session.get("session_id", ""),
+            "shipping_note": order_details["shipping_note"],
+            "tax_note": order_details["tax_note"]
+        }
+    }
+
+    recipient_email = payload.recipient.email
+    if recipient_email:
+        session_kwargs["customer_email"] = recipient_email
+
+    try:
+        checkout_session = stripe.checkout.Session.create(**session_kwargs)
+    except stripe.error.StripeError as exc:
+        raise HTTPException(status_code=500, detail=f"Stripe error: {str(exc)}") from exc
+
+    request.session["pending_order"] = {
+        "checkout_session_id": checkout_session.id,
+        "printful_order": {
+            "recipient": order_details["printful_recipient"],
+            "items": order_details["printful_items"],
+            "shipping": order_details["selected_shipping_rate"].get("id") or "STANDARD",
+            "retail_costs": {
+                "currency": "USD",
+                "subtotal": order_details["subtotal"],
+                "shipping": order_details["shipping_cost"],
+                "tax": order_details["tax_amount"],
+                "total": order_details["total"]
+            },
+            "confirm": True,
+            "external_id": checkout_session.id
+        },
+        "summary": {
+            "subtotal": order_details["subtotal"],
+            "shipping": order_details["shipping_cost"],
+            "tax": order_details["tax_amount"],
+            "total": order_details["total"]
+        },
+        "fulfilled": False
+    }
+
+    return {
+        "checkout_session_id": checkout_session.id,
+        "publishableKey": stripe_publishable_key
+    }
+
+@app.post("/api/checkout-success")
+async def complete_checkout(payload: CheckoutSuccessRequest, request: Request):
+    """Finalize the order after Stripe confirms payment."""
+    if not stripe.api_key:
+        raise HTTPException(status_code=500, detail="Stripe is not configured")
+
+    pending_order = request.session.get("pending_order")
+    if not pending_order or pending_order.get("checkout_session_id") != payload.session_id:
+        raise HTTPException(status_code=404, detail="No matching pending order found")
+
+    if pending_order.get("fulfilled"):
+        return {
+            "message": "Order already fulfilled",
+            "order_id": pending_order.get("order_id"),
+            "summary": pending_order.get("summary")
         }
 
-    except Exception as e:
-        print(f"Error calculating total cost: {e}")
-        # Fallback to simple calculation without API calls
-        tax_amount = total_retail_price * 0.085  # Estimated tax
-        estimated_shipping = 9.99  # Standard shipping estimate
+    try:
+        checkout_session = stripe.checkout.Session.retrieve(payload.session_id)
+    except stripe.error.StripeError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid checkout session: {str(exc)}") from exc
 
-        total_cost = total_retail_price + estimated_shipping + tax_amount
+    if checkout_session.payment_status != "paid":
+        raise HTTPException(status_code=400, detail="Payment not completed")
 
-        return {
-            "breakdown": {
-                "subtotal": round(total_retail_price, 2),
-                "shipping": round(estimated_shipping, 2),
-                "taxes": round(tax_amount, 2),
-                "tax_note": "Estimated",
-                "shipping_note": "Estimated"
-            },
-            "total": round(total_cost, 2),
-            "currency": "USD",
-            "available_shipping_rates": [{"rate": estimated_shipping, "name": "Standard Shipping"}]
-        }
+    printful_order = pending_order["printful_order"]
 
+    try:
+        printful_response = printful_client.create_order(printful_order)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to create Printful order: {str(exc)}") from exc
+
+    request.session["cart"] = []
+    order_result = printful_response.get("result", {})
+    order_summary = pending_order.get("summary")
+    pending_order_record = {
+        "checkout_session_id": payload.session_id,
+        "fulfilled": True,
+        "order_id": order_result.get("id"),
+        "summary": order_summary
+    }
+    request.session["pending_order"] = pending_order_record
+
+    return {
+        "message": "Order fulfilled successfully",
+        "order": printful_response,
+        "summary": order_summary
+    }
 @app.get("/api/store-info")
 async def get_store_info():
     """Get Printful store information"""

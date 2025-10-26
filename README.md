@@ -6,6 +6,8 @@ A simple merchandise shop for SundAI, built with FastAPI backend and vanilla Jav
 
 - **Product Catalog**: Browse SundAI merchandise with categories
 - **Shopping Cart**: Add/remove items, adjust quantities
+- **Stripe Checkout**: Secure payments with automatic post-payment fulfillment
+- **Printful Fulfillment**: Orders are created and confirmed with Printful after successful payment
 - **Responsive Design**: Works on desktop and mobile
 - **Clean UI**: Minimalist design inspired by sundai.club
 - **REST API**: Full backend API for products and cart management
@@ -16,6 +18,17 @@ A simple merchandise shop for SundAI, built with FastAPI backend and vanilla Jav
 - **Frontend**: Vanilla HTML, CSS, JavaScript
 - **Styling**: Custom CSS with Inter font
 - **Images**: PIL-generated placeholders
+
+## Environment Variables
+
+Create a `.env` file (or otherwise export the variables) with the following keys:
+
+- `PRINTFUL_API_KEY` - Printful API token used to load products and create orders
+- `PRINTFUL_STORE_ID` - Optional but recommended; restricts product queries to your store
+- `STRIPE_SECRET_KEY` - Stripe secret key used on the server to create checkout sessions
+- `STRIPE_PUBLISHABLE_KEY` - Stripe publishable key used by the client to redirect to Checkout
+- `SESSION_SECRET` - Secret used by FastAPI session middleware (defaults to a development value)
+- `ESTIMATED_TAX_RATE` - Optional override for the fallback tax rate (defaults to 0.085)
 
 ## Installation
 
@@ -33,12 +46,17 @@ python main.py
 
 ## API Endpoints
 
-- `GET /api/products` - Get all products
-- `GET /api/products/{id}` - Get specific product
-- `GET /api/products/category/{category}` - Get products by category
-- `GET /api/cart` - Get cart contents
-- `POST /api/cart` - Add item to cart
-- `DELETE /api/cart/{item_id}` - Remove item from cart
+- `GET /` - Storefront UI
+- `GET /api/products` - Fetch merchandise catalog
+- `GET /api/products/{product_id}` - Fetch a single product
+- `GET /api/cart` - Retrieve the current session cart
+- `POST /api/cart` - Add an item to the cart (session-scoped)
+- `DELETE /api/cart/{item_id}` - Remove an item from the cart
+- `POST /api/calculate-total-cost` - Estimate subtotal, shipping, and taxes for the active cart
+- `GET /api/stripe-config` - Publishable Stripe key for the client
+- `POST /api/create-checkout-session` - Create a Stripe Checkout session for the current cart
+- `POST /api/checkout-success` - Finalize successful Stripe payments and trigger Printful fulfillment
+- Printful helper endpoints: `/api/sync-products`, `/api/store-info`, `/api/catalog-products`, `/api/store-products`, `/api/create-order`, `/api/confirm-order/{order_id}`, `/api/order-status/{order_id}`
 
 ## Project Structure
 
