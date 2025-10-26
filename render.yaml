@@ -10,6 +10,12 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
+      - key: PORT
+        value: 8000
+      - key: PRINTFUL_API_KEY
+        value: ""
+      - key: PRINTFUL_STORE_ID
+        value: ""
     # Auto-scaling
     scaling:
       minInstances: 1
@@ -20,7 +26,6 @@ services:
     build:
       pip:
         cache: true
-
 # Databases (commented out - uncomment if needed)
 # databases:
 #   - name: sundai-merch-db
