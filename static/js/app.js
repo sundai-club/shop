@@ -261,31 +261,36 @@ async function updateQuantity(displayIndex, change) {
     }
 
     try {
-        // Delete all existing items for this product/size
-        for (const index of itemGroup.indices.sort((a, b) => b - a)) {
-            await fetch(`/api/cart/${index}`, { method: 'DELETE' });
+        if (change > 0) {
+            // Simple: add one more item
+            const response = await fetch('/api/cart', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    product_id: itemGroup.product_id,
+                    size: itemGroup.size,
+                    quantity: 1,  // Add just one item
+                    variant_price: itemGroup.variant_price
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to add item');
+            }
+        } else if (change < 0 && currentQuantity > 1) {
+            // Simple: remove just one item (the last one in the group)
+            const indexToRemove = itemGroup.indices[itemGroup.indices.length - 1];
+            const response = await fetch(`/api/cart/${indexToRemove}`, { method: 'DELETE' });
+
+            if (!response.ok) {
+                throw new Error('Failed to remove item');
+            }
         }
 
-        // Add new item with updated quantity
-        const response = await fetch('/api/cart', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                product_id: itemGroup.product_id,
-                size: itemGroup.size,
-                quantity: newQuantity,
-                variant_price: itemGroup.variant_price
-            })
-        });
-
-        if (response.ok) {
-            console.log('✅ Quantity update successful, reloading cart...');
-            await loadCart(); // Reload cart to get updated state
-        } else {
-            throw new Error('Failed to update quantity');
-        }
+        console.log('✅ Quantity update successful, reloading cart...');
+        await loadCart(); // Reload cart to get updated state
     } catch (error) {
         console.error('Error updating quantity:', error);
         showNotification('Failed to update quantity', 'error');
