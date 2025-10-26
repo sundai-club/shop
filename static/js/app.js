@@ -252,11 +252,9 @@ async function updateQuantity(displayIndex, change) {
     const currentQuantity = itemGroup.indices.length;
     const newQuantity = currentQuantity + change;
 
-    console.log(`🔧 Quantity Update: ${currentQuantity} + ${change} = ${newQuantity}`);
-
     // Don't allow quantity to go below 1 with minus button
     if (newQuantity < 1) {
-        console.log('❌ Blocked: quantity would go below 1');
+        // Keep at least 1 item, don't allow going to 0
         return;
     }
 
@@ -289,7 +287,6 @@ async function updateQuantity(displayIndex, change) {
             }
         }
 
-        console.log('✅ Quantity update successful, reloading cart...');
         await loadCart(); // Reload cart to get updated state
     } catch (error) {
         console.error('Error updating quantity:', error);
@@ -420,8 +417,132 @@ document.querySelector('.checkout-btn').addEventListener('click', () => {
         return;
     }
 
-    const total = cart.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
-    const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
-
-    showNotification(`Checkout: ${itemCount} items for $${total.toFixed(2)} - Integration with payment processor needed!`);
+    // Show shipping calculator modal
+    showShippingCalculator();
 });
+
+// Show shipping calculator modal
+function showShippingCalculator() {
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 10000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    `;
+
+    modal.innerHTML = `
+        <div style="background: white; padding: 32px; border-radius: 8px; max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto;">
+            <h3 style="margin-bottom: 24px; color: #0a0a0a;">Calculate Total Cost</h3>
+            <form id="shippingForm">
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #0a0a0a;">Full Name</label>
+                    <input type="text" name="name" required style="width: 100%; padding: 12px; border: 1px solid #f0f0f0; border-radius: 4px;">
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #0a0a0a;">Address</label>
+                    <input type="text" name="address1" required style="width: 100%; padding: 12px; border: 1px solid #f0f0f0; border-radius: 4px;">
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #0a0a0a;">City</label>
+                    <input type="text" name="city" required style="width: 100%; padding: 12px; border: 1px solid #f0f0f0; border-radius: 4px;">
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                    <div>
+                        <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #0a0a0a;">State/Province</label>
+                        <input type="text" name="state" required style="width: 100%; padding: 12px; border: 1px solid #f0f0f0; border-radius: 4px;">
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #0a0a0a;">ZIP/Postal Code</label>
+                        <input type="text" name="zip" required style="width: 100%; padding: 12px; border: 1px solid #f0f0f0; border-radius: 4px;">
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #0a0a0a;">Country</label>
+                        <input type="text" name="country" value="US" required style="width: 100%; padding: 12px; border: 1px solid #f0f0f0; border-radius: 4px;">
+                    </div>
+                </div>
+                <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                    <button type="button" onclick="this.closest('div[style*=position]').remove()" style="padding: 12px 24px; border: 1px solid #f0f0f0; background: white; cursor: pointer; border-radius: 4px;">Cancel</button>
+                    <button type="submit" style="padding: 12px 24px; background: #00FFCC; color: #0a0a0a; border: none; cursor: pointer; border-radius: 4px; font-weight: 600;">Calculate Total</button>
+                </div>
+            </form>
+            <div id="costBreakdown" style="margin-top: 24px; display: none;">
+                <h4 style="margin-bottom: 16px; color: #0a0a0a;">Cost Breakdown</h4>
+                <div id="breakdownContent"></div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // Handle form submission
+    document.getElementById('shippingForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const recipient = Object.fromEntries(formData.entries());
+
+        try {
+            const response = await fetch('/api/calculate-total-cost', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ recipient })
+            });
+
+            if (response.ok) {
+                const costData = await response.json();
+                displayCostBreakdown(costData);
+            } else {
+                throw new Error('Failed to calculate costs');
+            }
+        } catch (error) {
+            console.error('Error calculating costs:', error);
+            showNotification('Failed to calculate shipping costs', 'error');
+        }
+    });
+
+    function displayCostBreakdown(costData) {
+        const breakdownDiv = document.getElementById('costBreakdown');
+        const contentDiv = document.getElementById('breakdownContent');
+
+        contentDiv.innerHTML = `
+            <div style="display: grid; gap: 8px; margin-bottom: 16px;">
+                <div style="display: flex; justify-content: space-between;">
+                    <span>Subtotal:</span>
+                    <span>$${costData.breakdown.subtotal.toFixed(2)}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span>Shipping:</span>
+                    <span>$${costData.breakdown.shipping.toFixed(2)}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span>Taxes:</span>
+                    <span>$${costData.breakdown.taxes.toFixed(2)}</span>
+                </div>
+                <div style="border-top: 1px solid #f0f0f0; padding-top: 8px; margin-top: 8px; display: flex; justify-content: space-between; font-weight: 700; font-size: 18px;">
+                    <span>Total:</span>
+                    <span style="color: #00FFCC;">$${costData.total.toFixed(2)}</span>
+                </div>
+            </div>
+            <button onclick="proceedToCheckout(${costData.total.toFixed(2)})" style="width: 100%; padding: 16px; background: #0a0a0a; color: white; border: none; cursor: pointer; border-radius: 4px; font-weight: 600;">
+                Proceed to Checkout
+            </button>
+        `;
+
+        breakdownDiv.style.display = 'block';
+    }
+}
+
+// Proceed to checkout (placeholder for actual payment integration)
+function proceedToCheckout(total) {
+    showNotification(`Proceeding to checkout for $${total} - Payment integration needed!`);
+    // Close the modal
+    document.querySelector('div[style*="position: fixed"]').remove();
+}

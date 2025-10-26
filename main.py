@@ -320,6 +320,92 @@ async def estimate_costs():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to estimate costs: {str(e)}")
 
+@app.post("/api/calculate-total-cost")
+async def calculate_total_cost(order_data: Dict[str, Any]):
+    """
+    Calculate total order cost including products, shipping, and taxes
+
+    Expected payload:
+    {
+        "recipient": {
+            "name": "John Doe",
+            "address1": "123 Main St",
+            "city": "New York",
+            "state": "NY",
+            "country": "US",
+            "zip": "10001"
+        },
+        "shipping_method": "STANDARD" // optional
+    }
+    """
+    if not cart:
+        raise HTTPException(status_code=400, detail="Cart is empty")
+
+    recipient = order_data.get("recipient")
+    if not recipient:
+        raise HTTPException(status_code=400, detail="Recipient information is required")
+
+    # Prepare items for Printful API
+    items = []
+    total_retail_price = 0.0
+
+    for cart_item in cart:
+        if cart_item.get("variant_id"):
+            items.append({
+                "variant_id": cart_item["variant_id"],
+                "quantity": cart_item["quantity"]
+            })
+            # Calculate total retail price from cart
+            item_price = cart_item.get("variant_price") or cart_item["product"]["price"]
+            total_retail_price += item_price * cart_item["quantity"]
+
+    if not items:
+        raise HTTPException(status_code=400, detail="No valid items in cart")
+
+    try:
+        # Get all costs in parallel for efficiency
+        costs_result = printful_client.estimate_costs(items)
+        shipping_result = printful_client.get_shipping_rates(recipient, items)
+
+        # Calculate taxes (this endpoint might not exist in all Printful plans)
+        try:
+            taxes_result = printful_client.calculate_taxes(recipient, items)
+            tax_amount = taxes_result.get("result", {}).get("taxes", 0)
+        except Exception as tax_error:
+            print(f"Tax calculation failed (might not be available): {tax_error}")
+            tax_amount = 0
+
+        # Extract costs
+        product_costs = costs_result.get("result", {}).get("costs", [])
+        shipping_rates = shipping_result.get("result", [])
+
+        # Calculate product total (wholesale costs)
+        product_total = sum(item.get("cost", 0) for item in product_costs)
+
+        # Get shipping cost (use first available rate or default)
+        shipping_cost = 0
+        if shipping_rates:
+            # Use the first (usually standard) shipping rate
+            shipping_cost = shipping_rates[0].get("rate", 0)
+
+        # Calculate total
+        total_cost = total_retail_price + shipping_cost + tax_amount
+
+        return {
+            "breakdown": {
+                "subtotal": round(total_retail_price, 2),
+                "shipping": round(shipping_cost, 2),
+                "taxes": round(tax_amount, 2),
+                "product_costs": round(product_total, 2)  # For profit calculation
+            },
+            "total": round(total_cost, 2),
+            "currency": "USD",
+            "available_shipping_rates": shipping_rates
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to calculate total cost: {str(e)}")
+
 @app.get("/api/store-info")
 async def get_store_info():
     """Get Printful store information"""

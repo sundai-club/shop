@@ -90,6 +90,14 @@ class PrintfulClient:
         data = {"items": items}
         return self._make_request("POST", "/costs/estimate", data=data)
 
+    def calculate_taxes(self, recipient: Dict, items: List[Dict]) -> Dict:
+        """Calculate taxes for an order based on recipient address and items"""
+        data = {
+            "recipient": recipient,
+            "items": items
+        }
+        return self._make_request("POST", "/taxes/calculate", data=data)
+
     def confirm_order(self, order_id: int) -> Dict:
         """Confirm an order for fulfillment"""
         return self._make_request("POST", f"/orders/{order_id}/confirm")
