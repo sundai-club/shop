@@ -135,27 +135,29 @@ function renderProducts(productsToRender) {
                 <div class="product-price">
                     ${product.price_range ? product.price_range : `$${product.price.toFixed(2)}`}
                 </div>
-                ${product.sizes && product.sizes.length > 1 ? `
-                    <div class="size-selector">
-                        <label>Size:</label>
-                        <div class="size-options">
-                            ${product.sizes.map((size, index) => {
-                                const variant = product.variants?.find(v => v.name === size);
-                                let variantPrice = variant ? (variant.retail_price || variant.price / 100) : product.price;
-                                variantPrice = parseFloat(variantPrice) || product.price;
-                                return `
-                                    <button class="size-option" data-size="${size}" data-price="${variantPrice.toFixed(2)}" onclick="selectSize(this, ${product.id})">
-                                        ${size}
-                                        <span class="variant-price">$${variantPrice.toFixed(2)}</span>
-                                    </button>
-                                `;
-                            }).join('')}
+                <div class="product-actions">
+                    ${product.sizes && product.sizes.length > 1 ? `
+                        <div class="size-selector">
+                            <label>Size:</label>
+                            <div class="size-options">
+                                ${product.sizes.map((size, index) => {
+                                    const variant = product.variants?.find(v => v.name === size);
+                                    let variantPrice = variant ? (variant.retail_price || variant.price / 100) : product.price;
+                                    variantPrice = parseFloat(variantPrice) || product.price;
+                                    return `
+                                        <button class="size-option" data-size="${size}" data-price="${variantPrice.toFixed(2)}" onclick="selectSize(this, ${product.id})">
+                                            ${size}
+                                            <span class="variant-price">$${variantPrice.toFixed(2)}</span>
+                                        </button>
+                                    `;
+                                }).join('')}
+                            </div>
                         </div>
-                    </div>
-                ` : ''}
-                <button class="add-to-cart-btn" onclick="addToCart(${product.id})" ${!product.in_stock ? 'disabled' : ''}>
-                    ${product.in_stock ? 'Add to Cart' : 'Out of Stock'}
-                </button>
+                    ` : ''}
+                    <button class="add-to-cart-btn" onclick="addToCart(${product.id})" ${!product.in_stock ? 'disabled' : ''}>
+                        ${product.in_stock ? 'Add to Cart' : 'Out of Stock'}
+                    </button>
+                </div>
             </div>
         </div>
     `).join('');
