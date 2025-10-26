@@ -43,6 +43,9 @@ def get_user_cart(request: Request) -> List[Dict]:
     """Get or create user's cart from session"""
     if "cart" not in request.session:
         request.session["cart"] = []
+        print("Created new cart for session")
+    else:
+        print(f"Found existing cart with {len(request.session['cart'])} items")
     return request.session["cart"]
 
 def convert_printful_to_product(printful_product: Dict, fetch_variants: bool = True) -> Product:
@@ -272,11 +275,14 @@ async def add_to_cart(item: CartItem, request: Request):
 
     # Save cart to session
     request.session["cart"] = cart
+    print(f"Added item to cart. Cart now has {len(cart)} items")
     return {"message": "Item added to cart"}
 
 @app.get("/api/cart")
 async def get_cart(request: Request):
-    return get_user_cart(request)
+    cart = get_user_cart(request)
+    print(f"Getting cart for session: {len(cart)} items")
+    return cart
 
 @app.delete("/api/cart/{item_id}")
 async def remove_from_cart(item_id: int, request: Request):
