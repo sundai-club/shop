@@ -18,12 +18,12 @@ body {
 
 /* Header styles */
 .header {
-    border-bottom: 1px solid #1a1a1a; 
+    border-bottom: 1px solid #f8d7da; 
     position: sticky;
     top: 0;
-    background: rgba(5, 5, 5, 0.85); 
+    background: rgba(255, 192, 203, 0.95); 
     backdrop-filter: blur(10px);
-    z-index: 100;
+    z-index: 98;
 }
 
 .nav-container {
@@ -45,7 +45,7 @@ body {
 .logo h1 {
     font-size: 28px;
     font-weight: 800;
-    color: #0F8F8F8; 
+    color: #333333; 
     letter-spacing: -0.5px;
 }
 
