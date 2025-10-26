@@ -49,7 +49,7 @@ class PrintfulClient:
 
     def get_product_variants(self, product_id: int) -> Dict:
         """Get variants for a specific product"""
-        return self._make_request("GET", f"/store/products/{product_id}/variants")
+        return self._make_request("GET", f"/products/{product_id}/variants")
 
     def sync_products(self) -> Dict:
         """Sync products from Printful"""
