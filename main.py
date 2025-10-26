@@ -28,8 +28,7 @@ app.add_middleware(
     session_cookie="sundai_session",
     max_age=86400,  # 24 hours
     same_site="lax",
-    https_only=False,  # Set to True for production with HTTPS
-    httponly=False  # Allow JavaScript access for debugging
+    https_only=False  # Set to True for production with HTTPS
 )
 
 # Serve static files
@@ -295,12 +294,14 @@ async def add_to_cart(item: CartItem, request: Request):
 
     # Save cart to session
     request.session["cart"] = cart
+    print(f"Saved cart to session. Session data: {dict(request.session)}")
     return {"message": "Item added to cart"}
 
 @app.get("/api/cart")
 async def get_cart(request: Request):
     cart = get_user_cart(request)
     print(f"Cart get request: session has {len(cart)} items")
+    print(f"Full session data: {dict(request.session)}")
     return cart
 
 @app.delete("/api/cart/{item_id}")
