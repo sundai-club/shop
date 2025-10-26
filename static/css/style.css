@@ -319,8 +319,8 @@ body {
 }
 
 .size-option.selected .variant-price {
-    color: #1e4fb7;
-    background: rgba(30, 79, 183, 0.12);
+    color: #f5f8ff;
+    background: rgba(255, 255, 255, 0.18);
     padding: 1px 4px;
     border-radius: 3px;
     font-size: 9px;
