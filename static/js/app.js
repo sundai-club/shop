@@ -68,16 +68,23 @@ function renderProducts(productsToRender) {
             <div class="product-info">
                 <h3 class="product-name">${product.name}</h3>
                 <p class="product-description">${product.description}</p>
-                <div class="product-price">$${product.price.toFixed(2)}</div>
+                <div class="product-price">
+                    ${product.price_range ? product.price_range : `$${product.price.toFixed(2)}`}
+                </div>
                 ${product.sizes && product.sizes.length > 1 ? `
                     <div class="size-selector">
                         <label>Size:</label>
                         <div class="size-options">
-                            ${product.sizes.map(size => `
-                                <button class="size-option" data-size="${size}" onclick="selectSize(this, ${product.id})">
-                                    ${size}
-                                </button>
-                            `).join('')}
+                            ${product.sizes.map((size, index) => {
+                                const variant = product.variants?.find(v => v.name === size);
+                                const variantPrice = variant ? (variant.retail_price || variant.price / 100) : product.price;
+                                return `
+                                    <button class="size-option" data-size="${size}" data-price="${variantPrice}" onclick="selectSize(this, ${product.id})">
+                                        ${size}
+                                        ${variantPrice !== product.price ? `<span class="variant-price">$${variantPrice.toFixed(0)}</span>` : ''}
+                                    </button>
+                                `;
+                            }).join('')}
                         </div>
                     </div>
                 ` : ''}

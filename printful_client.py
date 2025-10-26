@@ -60,8 +60,14 @@ class PrintfulClient:
         return self._make_request("GET", f"/store/products/{product_id}")
 
     def get_product_variants(self, product_id: int) -> Dict:
-        """Get variants for a specific product"""
-        return self._make_request("GET", f"/store/products/{product_id}/variants")
+        """Get variants for a specific product - try different endpoints"""
+        try:
+            # Try the main product endpoint first (it includes variants)
+            return self._make_request("GET", f"/store/products/{product_id}")
+        except Exception as e:
+            print(f"Store product variant endpoint failed, trying catalog: {e}")
+            # Fall back to catalog variants
+            return self._make_request("GET", f"/products/{product_id}/variants")
 
     def sync_products(self) -> Dict:
         """Sync products from Printful"""

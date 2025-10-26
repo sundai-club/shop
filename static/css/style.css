@@ -301,6 +301,30 @@ body {
     opacity: 1;
 }
 
+.size-option {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 60px;
+}
+
+.variant-price {
+    font-size: 10px;
+    font-weight: 600;
+    color: #00FFCC;
+    margin-top: 2px;
+}
+
+.size-option.selected .variant-price {
+    color: #0a0a0a;
+    background: #00FFCC;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 9px;
+}
+
 .add-to-cart-btn {
     width: 100%;
     background: #00FFCC;

@@ -18,6 +18,7 @@ class Product(BaseModel):
     name: str
     description: str
     price: float
+    price_range: Optional[str] = None
     image_url: str
     sizes: List[str]
     in_stock: bool = True
@@ -47,9 +48,24 @@ def convert_printful_to_product(printful_product: Dict, fetch_variants: bool = T
     variants = []
     if fetch_variants and isinstance(variants_field, int) and variants_field > 0:
         try:
-            variants_response = printful_client.get_product_variants(product_id)
-            variants = variants_response.get("result", [])
-            print(f"Fetched {len(variants)} variants for product {product_id}")
+            # Get the full product details which should include variants
+            product_response = printful_client.get_product(product_id)
+            print(f"Full product response keys: {product_response.keys()}")
+
+            # Check if result contains variants
+            result = product_response.get("result", product_response)
+            if isinstance(result, dict):
+                variants = result.get("variants", result.get("sync_variants", []))
+                print(f"Found {len(variants)} variants in product details")
+                if variants:
+                    print(f"First variant fields: {list(variants[0].keys())}")
+
+            # If still no variants, try the variants endpoint
+            if not variants and isinstance(variants_field, int):
+                variants_response = printful_client.get_product_variants(product_id)
+                variants = variants_response.get("result", [])
+                print(f"Fetched {len(variants)} variants from variants endpoint")
+
         except Exception as e:
             print(f"Error fetching variants for product {product_id}: {e}")
             variants = []
@@ -67,21 +83,50 @@ def convert_printful_to_product(printful_product: Dict, fetch_variants: bool = T
             sizes.append(size_name)
 
     # Determine if in stock (check if any variant is in stock)
-    in_stock = any(variant.get("in_stock", False) for variant in variants)
+    in_stock = False
+    for variant in variants:
+        # Check various possible stock fields
+        availability = variant.get("availability_status", "available")
+        stock_status = variant.get("in_stock", variant.get("available",
+                        availability == "available" or availability == "active"))
+        if stock_status:
+            in_stock = True
+            break
 
-    # Get price from first available variant
-    price = 0.0
+    # Get price range from all variants
+    min_price = float('inf')
+    max_price = 0.0
     if variants:
-        for variant in variants:
+        print(f"Checking prices for {len(variants)} variants:")
+        for i, variant in enumerate(variants):
+            variant_price = 0.0
             if variant.get("retail_price"):
-                price = float(variant["retail_price"])
-                break
+                variant_price = float(variant["retail_price"])
+            elif variant.get("price"):
+                variant_price = float(variant["price"]) / 100  # Convert from cents
+
+            if variant_price > 0:
+                min_price = min(min_price, variant_price)
+                max_price = max(max_price, variant_price)
+                print(f"  Variant {i}: {variant.get('name', 'Unknown')} - ${variant_price}")
+
+    # Use price range if there are multiple prices, otherwise use single price
+    if min_price == float('inf'):  # No valid prices found
+        price = 0.0
+        price_range = None
+    elif min_price == max_price:
+        price = max_price
+        price_range = None
+    else:
+        price = min_price  # Show starting price
+        price_range = f"${min_price:.2f} - ${max_price:.2f}"
 
     return Product(
         id=product_id,
         name=name,
         description=f"High-quality {name.lower()} from SundAI",
         price=price,
+        price_range=price_range,
         image_url=image_url,
         sizes=sizes if sizes else ["One Size"],
         in_stock=in_stock,
@@ -196,7 +241,7 @@ async def add_to_cart(item: CartItem):
         "size": item.size,
         "quantity": item.quantity,
         "variant_id": variant_id,
-        "product": product.dict()
+        "product": product.model_dump()
     })
     return {"message": "Item added to cart"}
 
