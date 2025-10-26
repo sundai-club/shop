@@ -252,7 +252,7 @@ body {
 .product-price {
     font-size: 28px;
     font-weight: 800;
-    color: #00FFCC;
+    color: #0b3d91;
     margin-bottom: 24px;
     letter-spacing: -0.5px;
 }
@@ -341,7 +341,8 @@ body {
 }
 
 .add-to-cart-btn:hover {
-    background: #00E5B5;
+    background: #1e6fe0
+    ;
     transform: translateY(-1px);
 }
 
