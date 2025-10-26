@@ -8,18 +8,37 @@ from typing import List, Optional, Dict, Any
 import json
 import os
 import uuid
+from dotenv import load_dotenv
 import stripe
 from printful_client import printful_client
 
+load_dotenv()
+
 app = FastAPI(title="SundAI Merch Shop", description="Simple merchandise shop for SundAI")
 
-stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
-stripe_publishable_key = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
-if not stripe.api_key:
-    print("Warning: STRIPE_SECRET_KEY is not set. Stripe checkout will be unavailable.")
-if not stripe_publishable_key:
-    print("Warning: STRIPE_PUBLISHABLE_KEY is not set. Client checkout will be unavailable.")
+stripe_publishable_key_cache = ""
 
+def load_stripe_keys(force_reload: bool = False) -> Dict[str, str]:
+    """Load Stripe API keys from the environment and cache them."""
+    global stripe_publishable_key_cache
+
+    if force_reload or not stripe.api_key:
+        stripe_secret = os.getenv("STRIPE_SECRET_KEY", "")
+        stripe.api_key = stripe_secret
+        if not stripe_secret:
+            print("Warning: STRIPE_SECRET_KEY is not set. Stripe checkout will be unavailable.")
+
+    if force_reload or not stripe_publishable_key_cache:
+        stripe_publishable_key_cache = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
+        if not stripe_publishable_key_cache:
+            print("Warning: STRIPE_PUBLISHABLE_KEY is not set. Client checkout will be unavailable.")
+
+    return {
+        "publishable_key": stripe_publishable_key_cache,
+        "secret_key": stripe.api_key,
+    }
+
+stripe_keys = load_stripe_keys()
 ESTIMATED_TAX_RATE = float(os.getenv("ESTIMATED_TAX_RATE", "0.085"))
 
 # Add CORS middleware to handle cross-origin requests
@@ -571,14 +590,19 @@ async def calculate_total_cost(order_data: Dict[str, Any], request: Request):
 @app.get("/api/stripe-config")
 async def get_stripe_config():
     """Expose Stripe publishable key to the frontend."""
-    if not stripe_publishable_key:
+    keys = load_stripe_keys(force_reload=True)
+    publishable = keys["publishable_key"]
+    if not publishable:
         raise HTTPException(status_code=500, detail="Stripe publishable key is not configured")
-    return {"publishableKey": stripe_publishable_key}
+    return {"publishableKey": publishable}
 
 @app.post("/api/create-checkout-session")
 async def create_checkout_session(payload: CreateCheckoutSessionRequest, request: Request):
     """Create a Stripe checkout session for the current cart."""
-    if not stripe.api_key or not stripe_publishable_key:
+    keys = load_stripe_keys(force_reload=True)
+    publishable_key = keys["publishable_key"]
+
+    if not keys["secret_key"] or not publishable_key:
         raise HTTPException(status_code=500, detail="Stripe credentials are not configured")
 
     cart = get_user_cart(request)
@@ -689,13 +713,14 @@ async def create_checkout_session(payload: CreateCheckoutSessionRequest, request
 
     return {
         "checkout_session_id": checkout_session.id,
-        "publishableKey": stripe_publishable_key
+        "publishableKey": publishable_key
     }
 
 @app.post("/api/checkout-success")
 async def complete_checkout(payload: CheckoutSuccessRequest, request: Request):
     """Finalize the order after Stripe confirms payment."""
-    if not stripe.api_key:
+    keys = load_stripe_keys()
+    if not keys["secret_key"]:
         raise HTTPException(status_code=500, detail="Stripe is not configured")
 
     pending_order = request.session.get("pending_order")
