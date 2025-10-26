@@ -319,8 +319,8 @@ body {
 }
 
 .size-option.selected .variant-price {
-    color: #0a0a0a;
-    background: #00FFCC;
+    color: #ffffff;
+    background: #1e4fb7;
     padding: 1px 4px;
     border-radius: 3px;
     font-size: 9px;
@@ -328,8 +328,8 @@ body {
 
 .add-to-cart-btn {
     width: 100%;
-    background: #00FFCC;
-    color: #0a0a0a;
+    background: #0b3d91;
+    color: #ffffff;
     border: none;
     padding: 18px 24px;
     font-weight: 600;
