@@ -438,7 +438,7 @@ function showShippingCalculator() {
     `;
 
     modal.innerHTML = `
-        <div style="background: white; padding: 32px; border-radius: 8px; max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto;">
+        <div style="background: white; padding: 24px; border-radius: 8px; max-width: 500px; width: 90%; max-height: 95vh; overflow-y: auto;">
             <h3 style="margin-bottom: 24px; color: #0a0a0a;">Calculate Total Cost</h3>
             <form id="shippingForm">
                 <div style="margin-bottom: 16px;">
