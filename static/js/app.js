@@ -170,11 +170,11 @@ function updateCartUI() {
                 size: item.size,
                 quantity: 0,
                 variant_price: item.variant_price,
-                originalIndices: []
+                indices: []
             };
         }
         groupedCart[key].quantity += item.quantity;
-        groupedCart[key].originalIndices.push(index);
+        groupedCart[key].indices.push(index);
         totalItems += item.quantity;
     });
 
@@ -217,27 +217,34 @@ function updateCartUI() {
 
 // Update quantity
 async function updateQuantity(displayIndex, change) {
-    // Rebuild the grouped cart to find the actual item
+    // Rebuild grouped cart to find the correct item
     const groupedCart = {};
     cart.forEach((item, index) => {
         const key = `${item.product_id}-${item.size}`;
         if (!groupedCart[key]) {
             groupedCart[key] = {
+                product: item.product,
                 product_id: item.product_id,
                 size: item.size,
-                quantity: 0,
                 variant_price: item.variant_price,
                 indices: []
             };
         }
-        groupedCart[key].quantity += item.quantity;
         groupedCart[key].indices.push(index);
     });
 
     const groupedKeys = Object.keys(groupedCart);
     const actualKey = groupedKeys[displayIndex];
-    const actualItem = groupedCart[actualKey];
-    const newQuantity = actualItem.quantity + change;
+    const itemGroup = groupedCart[actualKey];
+
+    if (!actualKey || !itemGroup || !Array.isArray(itemGroup.indices)) {
+        console.error('Invalid cart state in quantity update, reloading...');
+        await loadCart();
+        return;
+    }
+
+    const currentQuantity = itemGroup.indices.length;
+    const newQuantity = currentQuantity + change;
 
     if (newQuantity <= 0) {
         removeFromCart(displayIndex);
@@ -245,37 +252,41 @@ async function updateQuantity(displayIndex, change) {
     }
 
     try {
-        // Remove all existing items for this product/size combination
-        const indicesToRemove = actualItem.indices.sort((a, b) => b - a); // Remove from back to front
-        for (const index of indicesToRemove) {
-            cart.splice(index, 1);
+        // Delete all existing items for this product/size
+        for (const index of itemGroup.indices.sort((a, b) => b - a)) {
+            await fetch(`/api/cart/${index}`, { method: 'DELETE' });
         }
 
-        // Add back the item with updated quantity
-        await fetch('/api/cart', {
+        // Add new item with updated quantity
+        const response = await fetch('/api/cart', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                product_id: actualItem.product_id,
-                size: actualItem.size,
+                product_id: itemGroup.product_id,
+                size: itemGroup.size,
                 quantity: newQuantity,
-                variant_price: actualItem.variant_price
+                variant_price: itemGroup.variant_price
             })
         });
 
-        await loadCart(); // Reload cart from server
+        if (response.ok) {
+            await loadCart(); // Reload cart to get updated state
+        } else {
+            throw new Error('Failed to update quantity');
+        }
     } catch (error) {
         console.error('Error updating quantity:', error);
         showNotification('Failed to update quantity', 'error');
+        await loadCart(); // Reload cart to reset state on error
     }
 }
 
 // Remove from cart
 async function removeFromCart(displayIndex) {
     try {
-        // Rebuild the grouped cart to find the actual items to remove
+        // Rebuild grouped cart to find the actual items to remove
         const groupedCart = {};
         cart.forEach((item, index) => {
             const key = `${item.product_id}-${item.size}`;
@@ -289,7 +300,14 @@ async function removeFromCart(displayIndex) {
 
         const groupedKeys = Object.keys(groupedCart);
         const actualKey = groupedKeys[displayIndex];
-        const indicesToRemove = groupedCart[actualKey].sort((a, b) => b - a); // Remove from back to front
+
+        if (!actualKey || !groupedCart[actualKey] || !Array.isArray(groupedCart[actualKey].indices)) {
+            console.error('Invalid cart state, reloading...');
+            await loadCart();
+            return;
+        }
+
+        const indicesToRemove = groupedCart[actualKey].indices.sort((a, b) => b - a); // Remove from back to front
 
         // Remove all cart items for this product/size combination
         for (const index of indicesToRemove) {
@@ -303,6 +321,7 @@ async function removeFromCart(displayIndex) {
     } catch (error) {
         console.error('Error removing from cart:', error);
         showNotification('Failed to remove item', 'error');
+        await loadCart(); // Reload to reset state on error
     }
 }
 
