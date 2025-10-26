@@ -282,14 +282,14 @@ async def add_to_cart(item: CartItem, request: Request):
                 variant_id = variant.get("id")
                 break
 
-    # Add to cart
+    # Add to cart - store minimal data to avoid cookie size limits
     cart.append({
         "product_id": item.product_id,
         "size": item.size,
         "quantity": item.quantity,
         "variant_id": variant_id,
-        "variant_price": item.variant_price,
-        "product": product.model_dump()
+        "variant_price": item.variant_price
+        # Don't store full product object - will fetch when needed
     })
 
     # Save cart to session
@@ -300,9 +300,22 @@ async def add_to_cart(item: CartItem, request: Request):
 @app.get("/api/cart")
 async def get_cart(request: Request):
     cart = get_user_cart(request)
-    print(f"Cart get request: session has {len(cart)} items")
-    print(f"Full session data: {dict(request.session)}")
-    return cart
+
+    # Enrich cart items with full product data (session stores minimal data)
+    enriched_cart = []
+    global products_cache
+    if not products_cache:
+        products_cache = get_products_from_printful()
+
+    for cart_item in cart:
+        product = next((p for p in products_cache if p.id == cart_item["product_id"]), None)
+        if product:
+            enriched_item = cart_item.copy()
+            enriched_item["product"] = product.model_dump()
+            enriched_cart.append(enriched_item)
+
+    print(f"Cart get request: session has {len(cart)} items, returning {len(enriched_cart)} enriched items")
+    return enriched_cart
 
 @app.delete("/api/cart/{item_id}")
 async def remove_from_cart(item_id: int, request: Request):

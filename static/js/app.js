@@ -365,7 +365,7 @@ function showNotification(message, type = 'success') {
     const notification = document.createElement('div');
     notification.style.cssText = `
         position: fixed;
-        top: 20px;
+        bottom: 20px;
         right: 20px;
         background: ${type === 'success' ? '#27ae60' : '#e74c3c'};
         color: white;
