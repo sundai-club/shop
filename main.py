@@ -2,9 +2,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import json
 import os
+from printful_client import printful_client
 
 app = FastAPI(title="SundAI Merch Shop", description="Simple merchandise shop for SundAI")
 
@@ -18,58 +19,74 @@ class Product(BaseModel):
     description: str
     price: float
     image_url: str
-    category: str
     sizes: List[str]
     in_stock: bool = True
+    printful_product_id: Optional[int] = None
+    variants: Optional[List[Dict[str, Any]]] = None
 
 class CartItem(BaseModel):
     product_id: int
     size: str
     quantity: int
+    variant_id: Optional[int] = None
 
-# Sample product data
-products = [
-    {
-        "id": 1,
-        "name": "SundAI Classic Tee",
-        "description": "Premium quality t-shirt with SundAI logo",
-        "price": 29.99,
-        "image_url": "/static/images/tshirt.jpg",
-        "category": "apparel",
-        "sizes": ["XS", "S", "M", "L", "XL", "XXL"],
-        "in_stock": True
-    },
-    {
-        "id": 2,
-        "name": "SundAI Hoodie",
-        "description": "Comfortable hoodie with minimalist design",
-        "price": 59.99,
-        "image_url": "/static/images/hoodie.jpg",
-        "category": "apparel",
-        "sizes": ["S", "M", "L", "XL", "XXL"],
-        "in_stock": True
-    },
-    {
-        "id": 3,
-        "name": "SundAI Cap",
-        "description": "Adjustable cap with embroidered logo",
-        "price": 19.99,
-        "image_url": "/static/images/cap.jpg",
-        "category": "accessories",
-        "sizes": ["One Size"],
-        "in_stock": True
-    },
-    {
-        "id": 4,
-        "name": "SundAI Tote Bag",
-        "description": "Eco-friendly canvas tote bag",
-        "price": 15.99,
-        "image_url": "/static/images/tote.jpg",
-        "category": "accessories",
-        "sizes": ["One Size"],
-        "in_stock": True
-    }
-]
+# Cache for products
+products_cache = []
+
+def convert_printful_to_product(printful_product: Dict) -> Product:
+    """Convert Printful product to our Product model"""
+    # Extract main product info
+    sync_product = printful_product.get("sync_product", {})
+    sync_variants = printful_product.get("sync_variants", [])
+
+    # Get the main image
+    image_url = "/static/images/placeholder.jpg"
+    if sync_product.get("thumbnail_url"):
+        image_url = sync_product["thumbnail_url"]
+    elif sync_variants and sync_variants[0].get("files"):
+        # Find first preview image
+        for file_info in sync_variants[0]["files"]:
+            if file_info.get("type") == "preview":
+                image_url = file_info["preview_url"]
+                break
+
+    # Extract available sizes
+    sizes = []
+    for variant in sync_variants:
+        size_name = variant.get("name", "One Size")
+        if size_name not in sizes:
+            sizes.append(size_name)
+
+    # Determine if in stock (check if any variant is available)
+    in_stock = any(variant.get("available", False) for variant in sync_variants)
+
+    return Product(
+        id=sync_product.get("id", 0),
+        name=sync_product.get("name", "Unknown Product"),
+        description=sync_product.get("description", ""),
+        price=sync_product.get("retail_price", 0.0),
+        image_url=image_url,
+        sizes=sizes if sizes else ["One Size"],
+        in_stock=in_stock,
+        printful_product_id=sync_product.get("id"),
+        variants=sync_variants
+    )
+
+def get_products_from_printful() -> List[Product]:
+    """Fetch products from Printful API"""
+    try:
+        response = printful_client.get_products()
+        printful_products = response.get("result", [])
+
+        products = []
+        for printful_product in printful_products:
+            product = convert_printful_to_product(printful_product)
+            products.append(product)
+
+        return products
+    except Exception as e:
+        print(f"Error fetching products from Printful: {e}")
+        return []
 
 # In-memory cart (in production, use a database)
 cart = []
@@ -84,36 +101,67 @@ async def health_check():
 
 @app.get("/api/products", response_model=List[Product])
 async def get_products():
-    return products
+    global products_cache
+    if not products_cache:
+        products_cache = get_products_from_printful()
+    return products_cache
 
 @app.get("/api/products/{product_id}", response_model=Product)
 async def get_product(product_id: int):
-    product = next((p for p in products if p["id"] == product_id), None)
+    global products_cache
+    if not products_cache:
+        products_cache = get_products_from_printful()
+
+    product = next((p for p in products_cache if p.id == product_id), None)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     return product
 
-@app.get("/api/products/category/{category}", response_model=List[Product])
-async def get_products_by_category(category: str):
-    return [p for p in products if p["category"] == category]
+@app.post("/api/sync-products")
+async def sync_products():
+    """Force sync products from Printful"""
+    try:
+        # Sync products
+        printful_client.sync_products()
+
+        # Clear cache and reload
+        global products_cache
+        products_cache = get_products_from_printful()
+
+        return {"message": "Products synced successfully", "count": len(products_cache)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to sync products: {str(e)}")
 
 @app.post("/api/cart")
 async def add_to_cart(item: CartItem):
+    global products_cache
+    if not products_cache:
+        products_cache = get_products_from_printful()
+
     # Check if product exists
-    product = next((p for p in products if p["id"] == item.product_id), None)
+    product = next((p for p in products_cache if p.id == item.product_id), None)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
     # Check if size is available
-    if item.size not in product["sizes"]:
+    if item.size not in product.sizes:
         raise HTTPException(status_code=400, detail="Size not available")
+
+    # Find the variant ID for the selected size
+    variant_id = None
+    if product.variants:
+        for variant in product.variants:
+            if variant.get("name") == item.size:
+                variant_id = variant.get("id")
+                break
 
     # Add to cart
     cart.append({
         "product_id": item.product_id,
         "size": item.size,
         "quantity": item.quantity,
-        "product": product
+        "variant_id": variant_id,
+        "product": product.dict()
     })
     return {"message": "Item added to cart"}
 
@@ -128,6 +176,89 @@ async def remove_from_cart(item_id: int):
         cart.pop(item_id)
         return {"message": "Item removed from cart"}
     raise HTTPException(status_code=404, detail="Cart item not found")
+
+@app.post("/api/estimate-shipping")
+async def estimate_shipping(recipient: Dict[str, str]):
+    """Estimate shipping rates for cart items"""
+    if not cart:
+        raise HTTPException(status_code=400, detail="Cart is empty")
+
+    # Prepare items for Printful API
+    items = []
+    for cart_item in cart:
+        if cart_item.get("variant_id"):
+            items.append({
+                "variant_id": cart_item["variant_id"],
+                "quantity": cart_item["quantity"]
+            })
+
+    if not items:
+        raise HTTPException(status_code=400, detail="No valid items in cart")
+
+    try:
+        rates = printful_client.get_shipping_rates(recipient, items)
+        return rates
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get shipping rates: {str(e)}")
+
+@app.post("/api/estimate-costs")
+async def estimate_costs():
+    """Estimate total costs for cart items"""
+    if not cart:
+        raise HTTPException(status_code=400, detail="Cart is empty")
+
+    # Prepare items for Printful API
+    items = []
+    for cart_item in cart:
+        if cart_item.get("variant_id"):
+            items.append({
+                "variant_id": cart_item["variant_id"],
+                "quantity": cart_item["quantity"]
+            })
+
+    if not items:
+        raise HTTPException(status_code=400, detail="No valid items in cart")
+
+    try:
+        costs = printful_client.estimate_costs(items)
+        return costs
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to estimate costs: {str(e)}")
+
+@app.post("/api/create-order")
+async def create_order(order_data: Dict[str, Any]):
+    """Create an order in Printful"""
+    if not cart:
+        raise HTTPException(status_code=400, detail="Cart is empty")
+
+    # Prepare items for Printful API
+    items = []
+    for cart_item in cart:
+        if cart_item.get("variant_id"):
+            items.append({
+                "variant_id": cart_item["variant_id"],
+                "quantity": cart_item["quantity"]
+            })
+
+    if not items:
+        raise HTTPException(status_code=400, detail="No valid items in cart")
+
+    # Prepare order data
+    printful_order = {
+        "recipient": order_data.get("recipient"),
+        "items": items,
+        "shipping": order_data.get("shipping", "STANDARD"),
+        "retail_price": order_data.get("retail_price", 0)
+    }
+
+    try:
+        order = printful_client.create_order(printful_order)
+        # Clear cart after successful order creation
+        global cart
+        cart = []
+        return order
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create order: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
