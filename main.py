@@ -253,10 +253,10 @@ async def create_order(order_data: Dict[str, Any]):
         "retail_price": order_data.get("retail_price", 0)
     }
 
+    global cart
     try:
         order = printful_client.create_order(printful_order)
         # Clear cart after successful order creation
-        global cart
         cart = []
         return order
     except Exception as e:
