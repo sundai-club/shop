@@ -1,7 +1,6 @@
 // Global state
 let products = [];
 let cart = [];
-let currentFilter = 'all';
 
 // DOM elements
 const productsGrid = document.getElementById('productsGrid');
@@ -11,7 +10,6 @@ const closeCart = document.getElementById('closeCart');
 const cartCount = document.getElementById('cartCount');
 const cartItems = document.getElementById('cartItems');
 const cartTotal = document.getElementById('cartTotal');
-const filterBtns = document.querySelectorAll('.filter-btn');
 const overlay = document.createElement('div');
 overlay.className = 'overlay';
 document.body.appendChild(overlay);
@@ -29,14 +27,7 @@ function setupEventListeners() {
     closeCart.addEventListener('click', closeCartSidebar);
     overlay.addEventListener('click', closeCartSidebar);
 
-    filterBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const category = btn.dataset.category;
-            setActiveFilter(category);
-            filterProducts(category);
-        });
-    });
-}
+  }
 
 // Load products from API
 async function loadProducts() {
@@ -234,21 +225,6 @@ async function removeFromCart(index) {
     }
 }
 
-// Filter products
-function filterProducts(category) {
-    const filtered = category === 'all'
-        ? products
-        : products.filter(p => p.category === category);
-    renderProducts(filtered);
-}
-
-// Set active filter
-function setActiveFilter(category) {
-    currentFilter = category;
-    filterBtns.forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.category === category);
-    });
-}
 
 // Cart controls
 function openCart() {
@@ -313,14 +289,6 @@ function showNotification(message, type = 'success') {
 document.querySelectorAll('a[href^="#"]').forEach(anchor => {
     anchor.addEventListener('click', function (e) {
         e.preventDefault();
-        const target = this.getAttribute('href').substring(1);
-        if (target === 'apparel') {
-            setActiveFilter('apparel');
-            filterProducts('apparel');
-        } else if (target === 'accessories') {
-            setActiveFilter('accessories');
-            filterProducts('accessories');
-        }
 
         // Scroll to products section
         document.querySelector('.products').scrollIntoView({
