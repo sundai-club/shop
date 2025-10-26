@@ -157,15 +157,36 @@ async function addToCart(productId) {
 
 // Update cart UI
 function updateCartUI() {
-    cartCount.textContent = cart.length;
+    // Group cart items by product_id and size to combine quantities
+    const groupedCart = {};
+    let totalItems = 0;
 
-    if (cart.length === 0) {
+    cart.forEach((item, index) => {
+        const key = `${item.product_id}-${item.size}`;
+        if (!groupedCart[key]) {
+            groupedCart[key] = {
+                product: item.product,
+                product_id: item.product_id,
+                size: item.size,
+                quantity: 0,
+                variant_price: item.variant_price,
+                originalIndices: []
+            };
+        }
+        groupedCart[key].quantity += item.quantity;
+        groupedCart[key].originalIndices.push(index);
+        totalItems += item.quantity;
+    });
+
+    cartCount.textContent = totalItems;
+
+    if (Object.keys(groupedCart).length === 0) {
         cartItems.innerHTML = '<div class="empty-cart">Your cart is empty</div>';
         cartTotal.textContent = '0.00';
         return;
     }
 
-    cartItems.innerHTML = cart.map((item, index) => {
+    cartItems.innerHTML = Object.values(groupedCart).map((item, displayIndex) => {
         const itemPrice = item.variant_price || item.product.price;
         return `
         <div class="cart-item">
@@ -177,17 +198,17 @@ function updateCartUI() {
                 <div class="cart-item-size">Size: ${item.size}</div>
                 <div class="cart-item-price">$${(itemPrice * item.quantity).toFixed(2)}</div>
                 <div class="cart-item-quantity">
-                    <button class="quantity-btn" onclick="updateQuantity(${index}, -1)">-</button>
+                    <button class="quantity-btn" onclick="updateQuantity(${displayIndex}, -1)">-</button>
                     <span class="quantity-display">${item.quantity}</span>
-                    <button class="quantity-btn" onclick="updateQuantity(${index}, 1)">+</button>
+                    <button class="quantity-btn" onclick="updateQuantity(${displayIndex}, 1)">+</button>
                 </div>
-                <button class="remove-item" onclick="removeFromCart(${index})">Remove</button>
+                <button class="remove-item" onclick="removeFromCart(${displayIndex})">Remove</button>
             </div>
         </div>
     `;
     }).join('');
 
-    const total = cart.reduce((sum, item) => {
+    const total = Object.values(groupedCart).reduce((sum, item) => {
         const itemPrice = item.variant_price || item.product.price;
         return sum + (itemPrice * item.quantity);
     }, 0);
@@ -195,29 +216,52 @@ function updateCartUI() {
 }
 
 // Update quantity
-async function updateQuantity(index, change) {
-    const item = cart[index];
-    const newQuantity = item.quantity + change;
+async function updateQuantity(displayIndex, change) {
+    // Rebuild the grouped cart to find the actual item
+    const groupedCart = {};
+    cart.forEach((item, index) => {
+        const key = `${item.product_id}-${item.size}`;
+        if (!groupedCart[key]) {
+            groupedCart[key] = {
+                product_id: item.product_id,
+                size: item.size,
+                quantity: 0,
+                variant_price: item.variant_price,
+                indices: []
+            };
+        }
+        groupedCart[key].quantity += item.quantity;
+        groupedCart[key].indices.push(index);
+    });
+
+    const groupedKeys = Object.keys(groupedCart);
+    const actualKey = groupedKeys[displayIndex];
+    const actualItem = groupedCart[actualKey];
+    const newQuantity = actualItem.quantity + change;
 
     if (newQuantity <= 0) {
-        removeFromCart(index);
+        removeFromCart(displayIndex);
         return;
     }
 
     try {
-        // Remove current item
-        await fetch(`/api/cart/${index}`, { method: 'DELETE' });
+        // Remove all existing items for this product/size combination
+        const indicesToRemove = actualItem.indices.sort((a, b) => b - a); // Remove from back to front
+        for (const index of indicesToRemove) {
+            cart.splice(index, 1);
+        }
 
-        // Add item with new quantity
+        // Add back the item with updated quantity
         await fetch('/api/cart', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                product_id: item.product_id,
-                size: item.size,
-                quantity: newQuantity
+                product_id: actualItem.product_id,
+                size: actualItem.size,
+                quantity: newQuantity,
+                variant_price: actualItem.variant_price
             })
         });
 
@@ -229,14 +273,33 @@ async function updateQuantity(index, change) {
 }
 
 // Remove from cart
-async function removeFromCart(index) {
+async function removeFromCart(displayIndex) {
     try {
-        const response = await fetch(`/api/cart/${index}`, { method: 'DELETE' });
-        if (response.ok) {
-            await loadCart(); // Reload cart from server
-        } else {
-            throw new Error('Failed to remove item');
+        // Rebuild the grouped cart to find the actual items to remove
+        const groupedCart = {};
+        cart.forEach((item, index) => {
+            const key = `${item.product_id}-${item.size}`;
+            if (!groupedCart[key]) {
+                groupedCart[key] = {
+                    indices: []
+                };
+            }
+            groupedCart[key].indices.push(index);
+        });
+
+        const groupedKeys = Object.keys(groupedCart);
+        const actualKey = groupedKeys[displayIndex];
+        const indicesToRemove = groupedCart[actualKey].sort((a, b) => b - a); // Remove from back to front
+
+        // Remove all cart items for this product/size combination
+        for (const index of indicesToRemove) {
+            const response = await fetch(`/api/cart/${index}`, { method: 'DELETE' });
+            if (!response.ok) {
+                throw new Error('Failed to remove item');
+            }
         }
+
+        await loadCart(); // Reload cart from server
     } catch (error) {
         console.error('Error removing from cart:', error);
         showNotification('Failed to remove item', 'error');
