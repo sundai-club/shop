@@ -35,41 +35,43 @@ products_cache = []
 
 def convert_printful_to_product(printful_product: Dict) -> Product:
     """Convert Printful product to our Product model"""
-    # Extract main product info
-    sync_product = printful_product.get("sync_product", {})
-    sync_variants = printful_product.get("sync_variants", [])
+    # Extract main product info (direct from product, not nested)
+    product_id = printful_product.get("id", 0)
+    name = printful_product.get("name", "Unknown Product")
+    thumbnail_url = printful_product.get("thumbnail_url")
+    variants = printful_product.get("variants", [])
 
     # Get the main image
-    image_url = "/static/images/placeholder.jpg"
-    if sync_product.get("thumbnail_url"):
-        image_url = sync_product["thumbnail_url"]
-    elif sync_variants and sync_variants[0].get("files"):
-        # Find first preview image
-        for file_info in sync_variants[0]["files"]:
-            if file_info.get("type") == "preview":
-                image_url = file_info["preview_url"]
-                break
+    image_url = thumbnail_url if thumbnail_url else "/static/images/placeholder.jpg"
 
-    # Extract available sizes
+    # Extract available sizes from variants
     sizes = []
-    for variant in sync_variants:
+    for variant in variants:
         size_name = variant.get("name", "One Size")
         if size_name not in sizes:
             sizes.append(size_name)
 
-    # Determine if in stock (check if any variant is available)
-    in_stock = any(variant.get("available", False) for variant in sync_variants)
+    # Determine if in stock (check if any variant is in stock)
+    in_stock = any(variant.get("in_stock", False) for variant in variants)
+
+    # Get price from first available variant
+    price = 0.0
+    if variants:
+        for variant in variants:
+            if variant.get("retail_price"):
+                price = float(variant["retail_price"])
+                break
 
     return Product(
-        id=sync_product.get("id", 0),
-        name=sync_product.get("name", "Unknown Product"),
-        description=sync_product.get("description", ""),
-        price=sync_product.get("retail_price", 0.0),
+        id=product_id,
+        name=name,
+        description=f"High-quality {name.lower()} from SundAI",
+        price=price,
         image_url=image_url,
         sizes=sizes if sizes else ["One Size"],
         in_stock=in_stock,
-        printful_product_id=sync_product.get("id"),
-        variants=sync_variants
+        printful_product_id=product_id,
+        variants=variants
     )
 
 def get_products_from_printful() -> List[Product]:
