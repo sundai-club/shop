@@ -243,6 +243,17 @@ async function updateQuantity(displayIndex, change) {
     const actualKey = sortedKeys[displayIndex];
     const itemGroup = groupedCart[actualKey];
 
+    console.log('updateQuantity debug:', {
+        displayIndex,
+        sortedKeys,
+        actualKey,
+        itemGroup: itemGroup ? {
+            product_id: itemGroup.product_id,
+            size: itemGroup.size,
+            indicesLength: itemGroup.indices?.length
+        } : null
+    });
+
     if (!actualKey || !itemGroup || !Array.isArray(itemGroup.indices)) {
         console.error('Invalid cart state in quantity update, reloading...');
         await loadCart();
@@ -252,9 +263,17 @@ async function updateQuantity(displayIndex, change) {
     const currentQuantity = itemGroup.indices.length;
     const newQuantity = currentQuantity + change;
 
+    console.log('Quantity calculation:', {
+        currentQuantity,
+        change,
+        newQuantity,
+        willPrevent: newQuantity < 1
+    });
+
     // Don't allow quantity to go below 1 with minus button
     if (newQuantity < 1) {
         // Keep at least 1 item, don't allow going to 0
+        console.log('Prevented quantity from going below 1');
         return;
     }
 
