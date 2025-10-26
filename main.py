@@ -2,16 +2,35 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import json
 import os
+import uuid
 from printful_client import printful_client
 
 app = FastAPI(title="SundAI Merch Shop", description="Simple merchandise shop for SundAI")
 
-# Add session middleware
-app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "your-secret-key-change-in-production"))
+# Add CORS middleware to handle cross-origin requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for now
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Add session middleware with proper configuration
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.getenv("SESSION_SECRET", "sundai-shop-secret-key-2024"),
+    session_cookie="sundai_session",
+    max_age=86400,  # 24 hours
+    same_site="lax",
+    https_only=False,  # Set to True for production with HTTPS
+    httponly=False  # Allow JavaScript access for debugging
+)
 
 # Serve static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -43,6 +62,8 @@ def get_user_cart(request: Request) -> List[Dict]:
     """Get or create user's cart from session"""
     if "cart" not in request.session:
         request.session["cart"] = []
+        request.session["session_id"] = str(uuid.uuid4())[:8]
+        print(f"Created new session with ID: {request.session['session_id']}")
     return request.session["cart"]
 
 def convert_printful_to_product(printful_product: Dict, fetch_variants: bool = True) -> Product:
@@ -236,6 +257,8 @@ async def sync_products():
 
 @app.post("/api/cart")
 async def add_to_cart(item: CartItem, request: Request):
+    print(f"Cart add request received: {item}")
+    print(f"Session ID: {request.session.get('session_id', 'no-session')}")
     global products_cache
     if not products_cache:
         products_cache = get_products_from_printful()
@@ -276,7 +299,9 @@ async def add_to_cart(item: CartItem, request: Request):
 
 @app.get("/api/cart")
 async def get_cart(request: Request):
-    return get_user_cart(request)
+    cart = get_user_cart(request)
+    print(f"Cart get request: session has {len(cart)} items")
+    return cart
 
 @app.delete("/api/cart/{item_id}")
 async def remove_from_cart(item_id: int, request: Request):
