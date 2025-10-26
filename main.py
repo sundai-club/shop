@@ -693,6 +693,24 @@ async def create_checkout_session(payload: CreateCheckoutSessionRequest, request
     success_url = f"{base_url}/checkout-success?session_id={{CHECKOUT_SESSION_ID}}"
     cancel_url = f"{base_url}/checkout-cancel"
 
+    recipient_country = (payload.recipient.country or "US").upper()
+    shipping_address = {
+        "line1": payload.recipient.address1,
+        "city": payload.recipient.city,
+        "state": payload.recipient.state,
+        "postal_code": payload.recipient.zip,
+        "country": recipient_country,
+    }
+    shipping_address = {k: v for k, v in shipping_address.items() if v}
+
+    metadata_payload = {
+        "recipient_name": payload.recipient.name,
+        "recipient_city": payload.recipient.city,
+        "recipient_state": payload.recipient.state,
+        "recipient_zip": payload.recipient.zip
+    }
+    metadata_payload = {k: v for k, v in metadata_payload.items() if v}
+
     session_kwargs: Dict[str, Any] = {
         "mode": "payment",
         "line_items": line_items,
@@ -703,8 +721,23 @@ async def create_checkout_session(payload: CreateCheckoutSessionRequest, request
             "app_session_id": request.session.get("session_id", ""),
             "shipping_note": order_details["shipping_note"],
             "tax_note": order_details["tax_note"]
+        },
+        "billing_address_collection": "auto",
+        "shipping_address_collection": {
+            "allowed_countries": [recipient_country]
+        },
+        "customer_creation": "if_required",
+        "payment_intent_data": {
+            "shipping": {
+                "name": payload.recipient.name,
+                "address": shipping_address
+            },
+            "metadata": metadata_payload
         }
     }
+
+    if payload.recipient.phone:
+        session_kwargs["payment_intent_data"]["shipping"]["phone"] = payload.recipient.phone
 
     recipient_email = payload.recipient.email
     if recipient_email:
