@@ -77,11 +77,12 @@ function renderProducts(productsToRender) {
                         <div class="size-options">
                             ${product.sizes.map((size, index) => {
                                 const variant = product.variants?.find(v => v.name === size);
-                                const variantPrice = variant ? (variant.retail_price || variant.price / 100) : product.price;
+                                let variantPrice = variant ? (variant.retail_price || variant.price / 100) : product.price;
+                                variantPrice = parseFloat(variantPrice) || product.price;
                                 return `
                                     <button class="size-option" data-size="${size}" data-price="${variantPrice}" onclick="selectSize(this, ${product.id})">
                                         ${size}
-                                        ${variantPrice !== product.price ? `<span class="variant-price">$${variantPrice.toFixed(0)}</span>` : ''}
+                                        <span class="variant-price">$${variantPrice.toFixed(0)}</span>
                                     </button>
                                 `;
                             }).join('')}
@@ -110,6 +111,8 @@ async function addToCart(productId) {
     if (!product || !product.in_stock) return;
 
     let selectedSize = 'One Size';
+    let variantPrice = product.price;
+
     if (product.sizes && product.sizes.length > 1) {
         const productCard = document.querySelector(`[data-product-id="${productId}"]`);
         const selectedSizeElement = productCard.querySelector('.size-option.selected');
@@ -118,6 +121,7 @@ async function addToCart(productId) {
             return;
         }
         selectedSize = selectedSizeElement.dataset.size;
+        variantPrice = selectedSizeElement ? parseFloat(selectedSizeElement.dataset.price) : product.price;
     }
 
     try {
@@ -129,7 +133,8 @@ async function addToCart(productId) {
             body: JSON.stringify({
                 product_id: productId,
                 size: selectedSize,
-                quantity: 1
+                quantity: 1,
+                variant_price: variantPrice
             })
         });
 
@@ -160,15 +165,17 @@ function updateCartUI() {
         return;
     }
 
-    cartItems.innerHTML = cart.map((item, index) => `
+    cartItems.innerHTML = cart.map((item, index) => {
+        const itemPrice = item.variant_price || item.product.price;
+        return `
         <div class="cart-item">
             <div class="cart-item-image">
-                <img src="${item.product.image_url}" alt="${item.product.name}" onerror="this.style.display='none'; this.parentElement.innerHTML='Product';">
+                <img src="${item.product.image_url}" alt="${item.product.name}" onerror="this.style.display='none'; this.parentElement.innerHTML='📦';">
             </div>
             <div class="cart-item-details">
                 <div class="cart-item-name">${item.product.name}</div>
                 <div class="cart-item-size">Size: ${item.size}</div>
-                <div class="cart-item-price">$${(item.product.price * item.quantity).toFixed(2)}</div>
+                <div class="cart-item-price">$${(itemPrice * item.quantity).toFixed(2)}</div>
                 <div class="cart-item-quantity">
                     <button class="quantity-btn" onclick="updateQuantity(${index}, -1)">-</button>
                     <span class="quantity-display">${item.quantity}</span>
@@ -177,9 +184,13 @@ function updateCartUI() {
                 <button class="remove-item" onclick="removeFromCart(${index})">Remove</button>
             </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
 
-    const total = cart.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
+    const total = cart.reduce((sum, item) => {
+        const itemPrice = item.variant_price || item.product.price;
+        return sum + (itemPrice * item.quantity);
+    }, 0);
     cartTotal.textContent = total.toFixed(2);
 }
 

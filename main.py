@@ -30,6 +30,7 @@ class CartItem(BaseModel):
     size: str
     quantity: int
     variant_id: Optional[int] = None
+    variant_price: Optional[float] = None
 
 # Cache for products
 products_cache = []
@@ -109,6 +110,19 @@ def convert_printful_to_product(printful_product: Dict, fetch_variants: bool = T
                 min_price = min(min_price, variant_price)
                 max_price = max(max_price, variant_price)
                 print(f"  Variant {i}: {variant.get('name', 'Unknown')} - ${variant_price}")
+
+        # Ensure all variants have numeric prices in the response
+        for variant in variants:
+            if variant.get("retail_price"):
+                try:
+                    variant["retail_price"] = float(variant["retail_price"])
+                except (ValueError, TypeError):
+                    pass
+            if variant.get("price"):
+                try:
+                    variant["price"] = float(variant["price"])
+                except (ValueError, TypeError):
+                    pass
 
     # Use price range if there are multiple prices, otherwise use single price
     if min_price == float('inf'):  # No valid prices found
@@ -241,6 +255,7 @@ async def add_to_cart(item: CartItem):
         "size": item.size,
         "quantity": item.quantity,
         "variant_id": variant_id,
+        "variant_price": item.variant_price,
         "product": product.model_dump()
     })
     return {"message": "Item added to cart"}
@@ -314,6 +329,51 @@ async def get_store_info():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get store info: {str(e)}")
 
+@app.get("/api/catalog-products")
+def get_catalog_products():
+    """Get all catalog products from Printful"""
+    try:
+        # Get catalog products (all available products, not just store products)
+        response = printful_client._make_request("GET", "/products")
+        return {
+            "catalog_products": response.get("result", []),
+            "count": len(response.get("result", [])),
+            "store_products": get_products_from_printful()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get catalog products: {str(e)}")
+
+@app.get("/api/store-products")
+async def get_store_products_only():
+    """Get only store products (your synced products)"""
+    try:
+        store_products = await get_products_from_printful()
+        return {
+            "store_products": store_products,
+            "count": len(store_products)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get store products: {str(e)}")
+
+@app.post("/api/confirm-order/{order_id}")
+async def confirm_order(order_id: int):
+    """Confirm an order for fulfillment"""
+    try:
+        order = printful_client.confirm_order(order_id)
+        return {"message": "Order confirmed for fulfillment", "order": order}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to confirm order: {str(e)}")
+
+@app.get("/api/order-status/{order_id}")
+async def get_order_status(order_id: int):
+    """Get order status and tracking information"""
+    try:
+        order = printful_client.get_order_status(order_id)
+        shipments = printful_client.get_order_shipments(order_id)
+        return {"order": order, "shipments": shipments}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get order status: {str(e)}")
+
 @app.post("/api/create-order")
 async def create_order(order_data: Dict[str, Any]):
     """Create an order in Printful"""
@@ -346,7 +406,12 @@ async def create_order(order_data: Dict[str, Any]):
         order = printful_client.create_order(printful_order)
         # Clear cart after successful order creation
         cart = []
-        return order
+        return {
+            "message": "Order created successfully",
+            "order_id": order.get("result", {}).get("id"),
+            "status": order.get("result", {}).get("status"),
+            "order": order
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create order: {str(e)}")
 
