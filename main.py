@@ -82,6 +82,7 @@ class CartItem(BaseModel):
     quantity: int
     variant_id: Optional[int] = None
     variant_price: Optional[float] = None
+    sync_variant_id: Optional[int] = None
 
 class RecipientInfo(BaseModel):
     name: str
@@ -133,11 +134,33 @@ def compute_order_details(cart: List[Dict[str, Any]], recipient: RecipientInfo) 
     subtotal = 0.0
 
     for cart_item in cart:
+        product = next((p for p in products_cache if p.id == cart_item["product_id"]), None)
+
         variant_id = cart_item.get("variant_id")
+        sync_variant_id = cart_item.get("sync_variant_id")
+        if (not variant_id or str(variant_id).strip() == "") and product and product.variants:
+            for variant in product.variants:
+                variant_sync_id = variant.get("id")
+                variant_catalog_id = variant.get("variant_id") or variant.get("id")
+                if (
+                    (sync_variant_id is not None and str(variant_sync_id) == str(sync_variant_id))
+                    or variant.get("name") == cart_item.get("size")
+                ):
+                    if variant_catalog_id:
+                        variant_id = variant_catalog_id
+                        cart_item["variant_id"] = variant_catalog_id
+                        cart_item["sync_variant_id"] = variant_sync_id
+                    break
+
         if not variant_id:
             continue
 
-        product = next((p for p in products_cache if p.id == cart_item["product_id"]), None)
+        try:
+            variant_id_int = int(variant_id)
+        except (TypeError, ValueError):
+            continue
+        cart_item["variant_id"] = variant_id_int
+
         unit_price = cart_item.get("variant_price")
         if unit_price is None and product:
             unit_price = product.price
@@ -149,13 +172,13 @@ def compute_order_details(cart: List[Dict[str, Any]], recipient: RecipientInfo) 
         subtotal += unit_price * quantity
 
         printful_items.append({
-            "variant_id": variant_id,
+            "variant_id": variant_id_int,
             "quantity": quantity
         })
 
         cart_entries.append({
             "product_id": cart_item["product_id"],
-            "variant_id": variant_id,
+            "variant_id": variant_id_int,
             "quantity": quantity,
             "unit_price": unit_price,
             "size": cart_item.get("size"),
@@ -434,11 +457,16 @@ async def add_to_cart(item: CartItem, request: Request):
 
     # Find the variant ID for the selected size
     variant_id = None
+    sync_variant_id = None
     if product.variants:
         for variant in product.variants:
             if variant.get("name") == item.size:
-                variant_id = variant.get("id")
+                variant_id = variant.get("variant_id") or variant.get("id")
+                sync_variant_id = variant.get("id")
                 break
+
+    if not variant_id:
+        raise HTTPException(status_code=400, detail="Selected variant is unavailable")
 
     # Add to cart - store minimal data to avoid cookie size limits
     cart.append({
@@ -446,7 +474,8 @@ async def add_to_cart(item: CartItem, request: Request):
         "size": item.size,
         "quantity": item.quantity,
         "variant_id": variant_id,
-        "variant_price": item.variant_price
+        "variant_price": item.variant_price,
+        "sync_variant_id": sync_variant_id
         # Don't store full product object - will fetch when needed
     })
 
