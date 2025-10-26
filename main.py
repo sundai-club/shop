@@ -33,13 +33,28 @@ class CartItem(BaseModel):
 # Cache for products
 products_cache = []
 
-def convert_printful_to_product(printful_product: Dict) -> Product:
+def convert_printful_to_product(printful_product: Dict, fetch_variants: bool = True) -> Product:
     """Convert Printful product to our Product model"""
     # Extract main product info (direct from product, not nested)
     product_id = printful_product.get("id", 0)
     name = printful_product.get("name", "Unknown Product")
     thumbnail_url = printful_product.get("thumbnail_url")
-    variants = printful_product.get("variants", [])
+
+    # Handle both store products (variants count) and catalog products (variants array)
+    variants_field = printful_product.get("variants", [])
+
+    # If variants is just a count, fetch the actual variants
+    variants = []
+    if fetch_variants and isinstance(variants_field, int) and variants_field > 0:
+        try:
+            variants_response = printful_client.get_product_variants(product_id)
+            variants = variants_response.get("result", [])
+            print(f"Fetched {len(variants)} variants for product {product_id}")
+        except Exception as e:
+            print(f"Error fetching variants for product {product_id}: {e}")
+            variants = []
+    elif isinstance(variants_field, list):
+        variants = variants_field
 
     # Get the main image
     image_url = thumbnail_url if thumbnail_url else "/static/images/placeholder.jpg"
@@ -78,12 +93,30 @@ def get_products_from_printful() -> List[Product]:
     """Fetch products from Printful API"""
     try:
         response = printful_client.get_products()
-        printful_products = response.get("result", [])
+        print(f"Printful API response keys: {response.keys()}")
 
+        # Handle both V1 (result) and V2 (data) response formats
+        result = response.get("result", response.get("data", []))
+        print(f"Products result type: {type(result)}")
+
+        # Handle both array and single product cases
+        if isinstance(result, list):
+            printful_products = result
+        elif isinstance(result, dict):
+            printful_products = [result]  # Wrap single product in list
+        else:
+            print(f"No products found. Response: {response}")
+            return []
+
+        print(f"Found {len(printful_products)} products")
         products = []
         for printful_product in printful_products:
-            product = convert_printful_to_product(printful_product)
-            products.append(product)
+            try:
+                product = convert_printful_to_product(printful_product)
+                products.append(product)
+            except Exception as e:
+                print(f"Error converting product {printful_product}: {e}")
+                continue
 
         return products
     except Exception as e:
@@ -227,9 +260,20 @@ async def estimate_costs():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to estimate costs: {str(e)}")
 
+@app.get("/api/store-info")
+async def get_store_info():
+    """Get Printful store information"""
+    try:
+        stores = printful_client.get_store_info()
+        return stores
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get store info: {str(e)}")
+
 @app.post("/api/create-order")
 async def create_order(order_data: Dict[str, Any]):
     """Create an order in Printful"""
+    global cart
+
     if not cart:
         raise HTTPException(status_code=400, detail="Cart is empty")
 
@@ -253,7 +297,6 @@ async def create_order(order_data: Dict[str, Any]):
         "retail_price": order_data.get("retail_price", 0)
     }
 
-    global cart
     try:
         order = printful_client.create_order(printful_order)
         # Clear cart after successful order creation

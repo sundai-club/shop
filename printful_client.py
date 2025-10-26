@@ -8,11 +8,14 @@ load_dotenv()
 class PrintfulClient:
     def __init__(self):
         self.api_key = os.getenv("PRINTFUL_API_KEY")
+        self.store_id = os.getenv("PRINTFUL_STORE_ID")
         self.base_url = "https://api.printful.com"
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
+        if self.store_id:
+            self.headers["X-PF-Store-ID"] = self.store_id
 
     def _make_request(self, method: str, endpoint: str, data: Optional[Dict] = None) -> Dict:
         """Make a request to the Printful API"""
@@ -40,8 +43,17 @@ class PrintfulClient:
         return self._make_request("GET", "/stores")
 
     def get_products(self) -> Dict:
-        """Get all products from the store"""
-        return self._make_request("GET", "/store/products")
+        """Get all products from the store - try catalog products if store products don't exist"""
+        try:
+            # First try store products (requires store_id)
+            if self.store_id:
+                return self._make_request("GET", "/store/products")
+            else:
+                raise Exception("No store ID configured")
+        except Exception as e:
+            print(f"Store products failed, trying catalog products: {e}")
+            # Fall back to catalog products
+            return self._make_request("GET", "/products")
 
     def get_product(self, product_id: int) -> Dict:
         """Get a specific product by ID"""
@@ -49,7 +61,7 @@ class PrintfulClient:
 
     def get_product_variants(self, product_id: int) -> Dict:
         """Get variants for a specific product"""
-        return self._make_request("GET", f"/products/{product_id}/variants")
+        return self._make_request("GET", f"/store/products/{product_id}/variants")
 
     def sync_products(self) -> Dict:
         """Sync products from Printful"""
