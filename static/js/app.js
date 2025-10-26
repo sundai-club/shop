@@ -186,7 +186,11 @@ function updateCartUI() {
         return;
     }
 
-    cartItems.innerHTML = Object.values(groupedCart).map((item, displayIndex) => {
+    // Sort keys alphabetically for consistent ordering
+    const sortedKeys = Object.keys(groupedCart).sort();
+
+    cartItems.innerHTML = sortedKeys.map((key, displayIndex) => {
+        const item = groupedCart[key];
         const itemPrice = item.variant_price || item.product.price;
         return `
         <div class="cart-item">
@@ -208,7 +212,8 @@ function updateCartUI() {
     `;
     }).join('');
 
-    const total = Object.values(groupedCart).reduce((sum, item) => {
+    const total = sortedKeys.reduce((sum, key) => {
+        const item = groupedCart[key];
         const itemPrice = item.variant_price || item.product.price;
         return sum + (itemPrice * item.quantity);
     }, 0);
@@ -233,8 +238,9 @@ async function updateQuantity(displayIndex, change) {
         groupedCart[key].indices.push(index);
     });
 
-    const groupedKeys = Object.keys(groupedCart);
-    const actualKey = groupedKeys[displayIndex];
+    // Sort keys alphabetically for consistent ordering
+    const sortedKeys = Object.keys(groupedCart).sort();
+    const actualKey = sortedKeys[displayIndex];
     const itemGroup = groupedCart[actualKey];
 
     if (!actualKey || !itemGroup || !Array.isArray(itemGroup.indices)) {
@@ -246,8 +252,9 @@ async function updateQuantity(displayIndex, change) {
     const currentQuantity = itemGroup.indices.length;
     const newQuantity = currentQuantity + change;
 
-    if (newQuantity <= 0) {
-        removeFromCart(displayIndex);
+    // Don't allow quantity to go below 1 with minus button
+    if (newQuantity < 1) {
+        // Keep at least 1 item, don't allow going to 0
         return;
     }
 
@@ -298,8 +305,9 @@ async function removeFromCart(displayIndex) {
             groupedCart[key].indices.push(index);
         });
 
-        const groupedKeys = Object.keys(groupedCart);
-        const actualKey = groupedKeys[displayIndex];
+        // Sort keys alphabetically for consistent ordering
+        const sortedKeys = Object.keys(groupedCart).sort();
+        const actualKey = sortedKeys[displayIndex];
 
         if (!actualKey || !groupedCart[actualKey] || !Array.isArray(groupedCart[actualKey].indices)) {
             console.error('Invalid cart state, reloading...');
