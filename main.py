@@ -345,6 +345,22 @@ async def calculate_total_cost(order_data: Dict[str, Any]):
     if not recipient:
         raise HTTPException(status_code=400, detail="Recipient information is required")
 
+    # Ensure recipient has required fields for Printful API
+    if not recipient.get("country"):
+        recipient["country"] = "US"
+
+    # Normalize the recipient data for Printful API
+    printful_recipient = {
+        "name": recipient.get("name", ""),
+        "address1": recipient.get("address1", ""),
+        "city": recipient.get("city", ""),
+        "state": recipient.get("state", ""),
+        "country": recipient.get("country", "US"),
+        "zip": recipient.get("zip", "")
+    }
+
+    print(f"Recipient data for shipping: {printful_recipient}")
+
     # Prepare items for Printful API
     items = []
     total_retail_price = 0.0
@@ -359,12 +375,14 @@ async def calculate_total_cost(order_data: Dict[str, Any]):
             item_price = cart_item.get("variant_price") or cart_item["product"]["price"]
             total_retail_price += item_price * cart_item["quantity"]
 
+    print(f"Items for shipping calculation: {items}")
+
     if not items:
         raise HTTPException(status_code=400, detail="No valid items in cart")
 
     try:
         # Get shipping rates first
-        shipping_result = printful_client.get_shipping_rates(recipient, items)
+        shipping_result = printful_client.get_shipping_rates(printful_recipient, items)
         shipping_rates = shipping_result.get("result", [])
 
         # Get shipping cost (use first available rate or default)
