@@ -80,9 +80,9 @@ function renderProducts(productsToRender) {
                                 let variantPrice = variant ? (variant.retail_price || variant.price / 100) : product.price;
                                 variantPrice = parseFloat(variantPrice) || product.price;
                                 return `
-                                    <button class="size-option" data-size="${size}" data-price="${variantPrice}" onclick="selectSize(this, ${product.id})">
+                                    <button class="size-option" data-size="${size}" data-price="${variantPrice.toFixed(2)}" onclick="selectSize(this, ${product.id})">
                                         ${size}
-                                        <span class="variant-price">$${variantPrice.toFixed(0)}</span>
+                                        <span class="variant-price">$${variantPrice.toFixed(2)}</span>
                                     </button>
                                 `;
                             }).join('')}
@@ -515,6 +515,8 @@ function showShippingCalculator() {
         const shippingNote = costData.breakdown.shipping_note ? ' (Estimated)' : '';
         const taxNote = costData.breakdown.tax_note ? ' (Estimated)' : '';
 
+        contentDiv.style.color = '#0a0a0a';
+
         contentDiv.innerHTML = `
             <div style="display: grid; gap: 8px; margin-bottom: 16px;">
                 <div style="display: flex; justify-content: space-between;">
@@ -531,7 +533,7 @@ function showShippingCalculator() {
                 </div>
                 <div style="border-top: 1px solid #f0f0f0; padding-top: 8px; margin-top: 8px; display: flex; justify-content: space-between; font-weight: 700; font-size: 18px;">
                     <span>Total:</span>
-                    <span style="color: #00FFCC;">$${costData.total.toFixed(2)}</span>
+                    <span style="color: #0a0a0a;">$${costData.total.toFixed(2)}</span>
                 </div>
             </div>
             <button onclick="proceedToCheckout(${costData.total.toFixed(2)})" style="width: 100%; padding: 16px; background: #0a0a0a; color: white; border: none; cursor: pointer; border-radius: 4px; font-weight: 600;">
