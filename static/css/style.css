@@ -285,9 +285,9 @@ body {
 }
 
 .size-options {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
 }
 
 .size-option {
@@ -683,7 +683,7 @@ body {
     }
 
     .size-options {
-        justify-content: flex-start;
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
     }
 
     .footer {
@@ -721,6 +721,10 @@ body {
     .products-grid {
         grid-template-columns: 1fr;
         gap: 32px;
+    }
+
+    .size-options {
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
     }
 
     .product-image {
