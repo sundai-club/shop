@@ -767,21 +767,29 @@ async def create_checkout_session(payload: CreateCheckoutSessionRequest, request
             "tax_note": order_details["tax_note"]
         },
         "billing_address_collection": "auto",
-        "shipping_address_collection": {
-            "allowed_countries": [recipient_country]
-        },
         "customer_creation": "if_required",
-        "payment_intent_data": {
-            "shipping": {
-                "name": payload.recipient.name,
-                "address": shipping_address
-            },
-            "metadata": metadata_payload
-        }
+        "payment_intent_data": {}
     }
 
-    if payload.recipient.phone:
-        session_kwargs["payment_intent_data"]["shipping"]["phone"] = payload.recipient.phone
+    payment_intent_data: Dict[str, Any] = session_kwargs["payment_intent_data"]
+    if metadata_payload:
+        payment_intent_data["metadata"] = metadata_payload
+
+    if shipping_address:
+        shipping_payload: Dict[str, Any] = {
+            "name": payload.recipient.name,
+            "address": shipping_address
+        }
+        if payload.recipient.phone:
+            shipping_payload["phone"] = payload.recipient.phone
+        payment_intent_data["shipping"] = shipping_payload
+    else:
+        session_kwargs["shipping_address_collection"] = {
+            "allowed_countries": [recipient_country]
+        }
+
+    if not payment_intent_data:
+        session_kwargs.pop("payment_intent_data")
 
     recipient_email = payload.recipient.email
     if recipient_email:
