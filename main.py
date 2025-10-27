@@ -299,6 +299,11 @@ def convert_printful_to_product(printful_product: Dict, fetch_variants: bool = T
 
     # Get the main image
     image_url = thumbnail_url if thumbnail_url else "/static/images/placeholder.jpg"
+    catalog_category = None
+    catalog_subcategory = None
+    catalog_gender = None
+    catalog_name_prefix = None
+
     if variants:
         mockup_url = None
         fallback_variant_image = None
@@ -311,6 +316,22 @@ def convert_printful_to_product(printful_product: Dict, fetch_variants: bool = T
             product_image = variant.get("product", {}).get("image") or variant.get("product", {}).get("preview_image")
             if product_image and not fallback_variant_image:
                 fallback_variant_image = product_image
+            if not catalog_category:
+                product_meta = variant.get("product", {})
+                catalog_name_prefix = catalog_name_prefix or product_meta.get("name")
+                product_id = product_meta.get("product_id")
+                variant_id = product_meta.get("variant_id")
+                if product_id and variant_id:
+                    try:
+                        catalog_response = printful_client._make_request("GET", f"/products/{product_id}")
+                        catalog_result = catalog_response.get("result", {})
+                        main_category = catalog_result.get("main_category")
+                        if main_category:
+                            catalog_category = main_category.get("name")
+                            catalog_gender = main_category.get("gender")
+                            catalog_subcategory = main_category.get("parent", {}).get("name")
+                    except Exception as catalog_exc:
+                        print(f"Failed to fetch catalog metadata for product {product_id}: {catalog_exc}")
 
         image_url = mockup_url or fallback_variant_image or image_url
 
