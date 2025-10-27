@@ -299,6 +299,20 @@ def convert_printful_to_product(printful_product: Dict, fetch_variants: bool = T
 
     # Get the main image
     image_url = thumbnail_url if thumbnail_url else "/static/images/placeholder.jpg"
+    if variants:
+        mockup_url = None
+        fallback_variant_image = None
+        for variant in variants:
+            files = variant.get("files") or []
+            mockup_file = next((f for f in files if f.get("type") in {"mockup", "preview"} and f.get("preview_url")), None)
+            if mockup_file:
+                mockup_url = mockup_file.get("preview_url")
+                break
+            product_image = variant.get("product", {}).get("image") or variant.get("product", {}).get("preview_image")
+            if product_image and not fallback_variant_image:
+                fallback_variant_image = product_image
+
+        image_url = mockup_url or fallback_variant_image or image_url
 
     # Extract available sizes from variants
     sizes = []
