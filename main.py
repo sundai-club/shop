@@ -139,19 +139,33 @@ def compute_order_details(cart: List[Dict[str, Any]], recipient: RecipientInfo) 
 
         variant_id = cart_item.get("variant_id")
         sync_variant_id = cart_item.get("sync_variant_id")
-        if (not variant_id or str(variant_id).strip() == "") and product and product.variants:
+        matched_variant = None
+
+        if product and product.variants:
             for variant in product.variants:
                 variant_sync_id = variant.get("id")
-                variant_catalog_id = variant.get("variant_id") or variant.get("id")
-                if (
-                    (sync_variant_id is not None and str(variant_sync_id) == str(sync_variant_id))
-                    or variant.get("name") == cart_item.get("size")
-                ):
-                    if variant_catalog_id:
-                        variant_id = variant_catalog_id
-                        cart_item["variant_id"] = variant_catalog_id
-                        cart_item["sync_variant_id"] = variant_sync_id
+                if sync_variant_id is not None and str(variant_sync_id) == str(sync_variant_id):
+                    matched_variant = variant
                     break
+
+            if not matched_variant and variant_id is not None:
+                for variant in product.variants:
+                    candidate_id = variant.get("variant_id") or variant.get("id")
+                    if candidate_id is not None and str(candidate_id) == str(variant_id):
+                        matched_variant = variant
+                        break
+
+            if not matched_variant:
+                for variant in product.variants:
+                    if variant.get("name") == cart_item.get("size"):
+                        matched_variant = variant
+                        break
+
+            if matched_variant:
+                variant_id = matched_variant.get("variant_id") or matched_variant.get("id")
+                sync_variant_id = matched_variant.get("id")
+                cart_item["variant_id"] = variant_id
+                cart_item["sync_variant_id"] = sync_variant_id
 
         if not variant_id:
             continue
