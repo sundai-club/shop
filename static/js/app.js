@@ -618,8 +618,8 @@ async function showShippingCalculator() {
         const breakdownDiv = document.getElementById('costBreakdown');
         const contentDiv = document.getElementById('breakdownContent');
 
-        const shippingNote = costData.breakdown.shipping_note ? ' (Estimated)' : '';
-        const taxNote = costData.breakdown.tax_note ? ' (Estimated)' : '';
+        const shippingNote = costData.breakdown.shipping_note ? ` (${costData.breakdown.shipping_note})` : '';
+        const taxNote = costData.breakdown.tax_note ? ` (${costData.breakdown.tax_note})` : '';
 
         contentDiv.style.color = '#0a0a0a';
 

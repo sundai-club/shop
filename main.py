@@ -104,6 +104,15 @@ class CheckoutSuccessRequest(BaseModel):
 products_cache = []
 countries_cache: List[Dict[str, str]] = []
 
+def _to_float(value: Any, default: float = 0.0) -> float:
+    """Coerce Printful monetary strings into floats."""
+    try:
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
 def build_printful_recipient(recipient: RecipientInfo) -> Dict[str, Any]:
     """Map the recipient info into the structure Printful expects."""
     country_code = recipient.country or "US"
@@ -130,9 +139,20 @@ def compute_order_details(cart: List[Dict[str, Any]], recipient: RecipientInfo) 
     if not products_cache:
         products_cache = get_products_from_printful()
 
+    def normalize_costs(cost_dict: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        normalized: Dict[str, Any] = {}
+        if not cost_dict:
+            return normalized
+        for key, value in cost_dict.items():
+            if key == "currency":
+                normalized[key] = value or "USD"
+            else:
+                normalized[key] = _to_float(value, 0.0)
+        return normalized
+
     printful_items = []
     cart_entries = []
-    subtotal = 0.0
+    retail_subtotal = 0.0
 
     for cart_item in cart:
         product = next((p for p in products_cache if p.id == cart_item["product_id"]), None)
@@ -183,8 +203,13 @@ def compute_order_details(cart: List[Dict[str, Any]], recipient: RecipientInfo) 
         if unit_price is None:
             continue
 
-        quantity = cart_item.get("quantity", 1)
-        subtotal += unit_price * quantity
+        try:
+            unit_price = float(unit_price)
+        except (TypeError, ValueError):
+            continue
+
+        quantity = int(cart_item.get("quantity", 1) or 1)
+        retail_subtotal += unit_price * quantity
 
         # Build Printful item with sync_variant_id if available
         printful_item = {
@@ -205,7 +230,7 @@ def compute_order_details(cart: List[Dict[str, Any]], recipient: RecipientInfo) 
             "product_id": cart_item["product_id"],
             "variant_id": variant_id_int,
             "quantity": quantity,
-            "unit_price": unit_price,
+            "unit_price": round(unit_price, 2),
             "size": cart_item.get("size"),
             "name": product.name if product else f"Product {cart_item['product_id']}"
         })
@@ -249,24 +274,116 @@ def compute_order_details(cart: List[Dict[str, Any]], recipient: RecipientInfo) 
     # Use actual shipping cost from Printful shipping rates API
     if shipping_rates:
         # We have actual shipping costs from Printful
-        shipping_note = shipping_rate.get("name", "Standard")
+        shipping_note = f"{shipping_rate.get('name', 'Standard')} via Printful"
     else:
         # Fallback shipping
-        shipping_note = "Estimated"
+        shipping_note = "Fallback estimate"
 
     # Calculate tax - for now use estimated rate, but this could be improved
-    tax_amount = subtotal * ESTIMATED_TAX_RATE
+    tax_amount = retail_subtotal * ESTIMATED_TAX_RATE
     tax_note = "Estimated"
 
+    subtotal = retail_subtotal
     total_cost = subtotal + shipping_cost + tax_amount
 
+    def format_money(value: float) -> str:
+        return f"{value:.2f}"
+
+    retail_breakdown = {
+        "currency": "USD",
+        "subtotal": round(retail_subtotal, 2),
+        "shipping": round(shipping_cost, 2),
+        "tax": round(tax_amount, 2),
+        "discount": 0.0,
+        "total": round(total_cost, 2)
+    }
+
+    retail_costs_payload = {
+        "currency": retail_breakdown["currency"],
+        "subtotal": format_money(retail_breakdown["subtotal"]),
+        "discount": format_money(retail_breakdown["discount"]),
+        "shipping": format_money(retail_breakdown["shipping"]),
+        "tax": format_money(retail_breakdown["tax"]),
+        "total": format_money(retail_breakdown["total"])
+    }
+
+    printful_costs: Dict[str, Any] = {}
+    printful_retail_costs: Dict[str, Any] = {}
+    shipping_method_id = shipping_rate.get("id") if shipping_rate else None
+
+    try:
+        estimate_response = printful_client.estimate_costs(
+            recipient=printful_recipient,
+            items=printful_items,
+            shipping=shipping_method_id,
+            retail_costs=retail_costs_payload
+        )
+        estimate_result = estimate_response.get("result", estimate_response)
+        printful_costs = normalize_costs(estimate_result.get("costs"))
+        printful_retail_costs = normalize_costs(estimate_result.get("retail_costs"))
+    except Exception as exc:
+        print(f"Error retrieving Printful cost estimate: {exc}")
+
+    if printful_costs:
+        subtotal = round(printful_costs.get("subtotal", subtotal), 2)
+        shipping_cost = round(printful_costs.get("shipping", shipping_cost), 2)
+        tax_amount = round(
+            printful_costs.get("tax", printful_costs.get("vat", tax_amount)),
+            2
+        )
+        total_cost = round(
+            printful_costs.get("total", subtotal + shipping_cost + tax_amount),
+            2
+        )
+        tax_note = "Printful"
+        if not shipping_rates:
+            shipping_note = "Printful rate"
+
+        desired_subtotal = subtotal
+        if desired_subtotal > 0 and cart_entries:
+            current_line_total = round(sum(
+                entry["unit_price"] * entry["quantity"] for entry in cart_entries
+            ), 2)
+            adjusted_line_total = 0.0
+
+            if current_line_total > 0:
+                multiplier = desired_subtotal / current_line_total
+                for entry in cart_entries:
+                    entry["unit_price"] = round(entry["unit_price"] * multiplier, 2)
+                    adjusted_line_total += entry["unit_price"] * entry["quantity"]
+            else:
+                total_quantity = sum(entry["quantity"] for entry in cart_entries)
+                if total_quantity > 0:
+                    per_unit = round(desired_subtotal / total_quantity, 2)
+                    for entry in cart_entries:
+                        entry["unit_price"] = per_unit
+                        adjusted_line_total += entry["unit_price"] * entry["quantity"]
+
+            diff = round(desired_subtotal - adjusted_line_total, 2)
+            if abs(diff) >= 0.01 and cart_entries:
+                last_entry = cart_entries[-1]
+                per_unit_adjustment = diff / max(last_entry["quantity"], 1)
+                last_entry["unit_price"] = round(
+                    last_entry["unit_price"] + per_unit_adjustment, 2
+                )
+    else:
+        subtotal = round(subtotal, 2)
+        shipping_cost = round(shipping_cost, 2)
+        tax_amount = round(tax_amount, 2)
+        total_cost = round(total_cost, 2)
+
     return {
-        "subtotal": round(subtotal, 2),
-        "shipping_cost": round(shipping_cost, 2),
+        "subtotal": subtotal,
+        "shipping_cost": shipping_cost,
         "shipping_note": shipping_note,
-        "tax_amount": round(tax_amount, 2),
+        "tax_amount": tax_amount,
         "tax_note": tax_note,
-        "total": round(total_cost, 2),
+        "total": total_cost,
+        "cost_source": "printful" if printful_costs else "estimated",
+        "retail_subtotal": round(retail_subtotal, 2),
+        "printful_costs": printful_costs,
+        "retail_costs": printful_retail_costs if printful_retail_costs else retail_breakdown,
+        "shipping_method_id": shipping_method_id,
         "printful_recipient": printful_recipient,
         "shipping_rates": shipping_rates,
         "selected_shipping_rate": shipping_rate,
@@ -648,29 +765,37 @@ async def estimate_shipping(recipient: Dict[str, str], request: Request):
         raise HTTPException(status_code=500, detail=f"Failed to get shipping rates: {str(e)}")
 
 @app.post("/api/estimate-costs")
-async def estimate_costs(request: Request):
-    """Estimate total costs for cart items"""
+async def estimate_costs(order_data: Dict[str, Any], request: Request):
+    """Estimate total costs for the current cart using Printful data."""
     cart = get_user_cart(request)
     if not cart:
         raise HTTPException(status_code=400, detail="Cart is empty")
 
-    # Prepare items for Printful API
-    items = []
-    for cart_item in cart:
-        if cart_item.get("variant_id"):
-            items.append({
-                "variant_id": cart_item["variant_id"],
-                "quantity": cart_item["quantity"]
-            })
-
-    if not items:
-        raise HTTPException(status_code=400, detail="No valid items in cart")
+    recipient_payload = order_data.get("recipient")
+    if not recipient_payload:
+        raise HTTPException(status_code=400, detail="Recipient information is required")
 
     try:
-        costs = printful_client.estimate_costs(items)
-        return costs
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to estimate costs: {str(e)}")
+        recipient_info = RecipientInfo(**recipient_payload)
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid recipient information: {exc.errors()}") from exc
+
+    try:
+        order_details = compute_order_details(cart, recipient_info)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to estimate costs: {str(exc)}") from exc
+
+    return {
+        "printful_costs": order_details.get("printful_costs"),
+        "retail_costs": order_details.get("retail_costs"),
+        "cost_source": order_details.get("cost_source"),
+        "subtotal": order_details.get("subtotal"),
+        "shipping": order_details.get("shipping_cost"),
+        "tax": order_details.get("tax_amount"),
+        "total": order_details.get("total")
+    }
 
 @app.post("/api/calculate-total-cost")
 async def calculate_total_cost(order_data: Dict[str, Any], request: Request):
@@ -710,7 +835,7 @@ async def calculate_total_cost(order_data: Dict[str, Any], request: Request):
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to calculate total cost: {str(exc)}") from exc
 
-    return {
+    response = {
         "breakdown": {
             "subtotal": order_details["subtotal"],
             "shipping": order_details["shipping_cost"],
@@ -721,8 +846,18 @@ async def calculate_total_cost(order_data: Dict[str, Any], request: Request):
         "total": order_details["total"],
         "currency": "USD",
         "available_shipping_rates": order_details["shipping_rates"],
-        "selected_shipping_rate": order_details["selected_shipping_rate"]
+        "selected_shipping_rate": order_details["selected_shipping_rate"],
+        "cost_source": order_details.get("cost_source", "estimated")
     }
+
+    if order_details.get("printful_costs"):
+        response["printful_costs"] = order_details["printful_costs"]
+    if order_details.get("retail_costs"):
+        response["retail_costs"] = order_details["retail_costs"]
+    if order_details.get("retail_subtotal") is not None:
+        response["retail_subtotal"] = order_details["retail_subtotal"]
+
+    return response
 
 @app.get("/api/stripe-config")
 async def get_stripe_config():
@@ -864,12 +999,15 @@ async def create_checkout_session(payload: CreateCheckoutSessionRequest, request
     except stripe.error.StripeError as exc:
         raise HTTPException(status_code=500, detail=f"Stripe error: {str(exc)}") from exc
 
+    selected_shipping = order_details.get("selected_shipping_rate") or {}
+    shipping_method = order_details.get("shipping_method_id") or selected_shipping.get("id") or "STANDARD"
+
     request.session["pending_order"] = {
         "checkout_session_id": checkout_session.id,
         "printful_order": {
             "recipient": order_details["printful_recipient"],
             "items": order_details["printful_items"],
-            "shipping": order_details["selected_shipping_rate"].get("id") or "STANDARD",
+            "shipping": shipping_method,
             "retail_costs": {
                 "currency": "USD",
                 "subtotal": order_details["subtotal"],

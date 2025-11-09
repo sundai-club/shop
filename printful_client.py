@@ -86,11 +86,35 @@ class PrintfulClient:
         }
         return self._make_request("POST", "/shipping/rates", data=data)
 
-    def estimate_costs(self, items: List[Dict]) -> Dict:
-        """Get cost estimates for items"""
-        # NOTE: This endpoint seems to not exist in the current API version
-        # Keeping method for compatibility but not implementing
-        raise NotImplementedError("Cost estimate endpoint not available in current API version")
+    def estimate_costs(
+        self,
+        recipient: Dict,
+        items: List[Dict],
+        shipping: Optional[str] = None,
+        retail_costs: Optional[Dict] = None,
+        currency: str = "USD",
+    ) -> Dict:
+        """
+        Get an accurate cost estimate for an order using Printful's /orders/estimate-costs endpoint.
+
+        Args:
+            recipient: Printful-formatted recipient dictionary (see build_printful_recipient)
+            items: List of Printful items (sync_variant_id or variant_id with quantity)
+            shipping: Optional shipping method identifier (e.g. STANDARD, EXPRESS)
+            retail_costs: Optional retail cost breakdown to share with Printful
+            currency: Currency to request estimates in (defaults to USD)
+        """
+        data: Dict[str, Any] = {
+            "recipient": recipient,
+            "items": items,
+            "currency": currency
+        }
+        if shipping:
+            data["shipping"] = shipping
+        if retail_costs:
+            data["retail_costs"] = retail_costs
+
+        return self._make_request("POST", "/orders/estimate-costs", data=data)
 
     def get_countries(self) -> Dict:
         """Retrieve available countries from Printful"""
