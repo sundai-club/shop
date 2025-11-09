@@ -896,7 +896,17 @@ async def complete_checkout(payload: CheckoutSuccessRequest, request: Request):
     try:
         printful_response = printful_client.create_order(printful_order)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to create Printful order: {str(exc)}") from exc
+        # Check if it's the specific "no print files" error
+        error_msg = str(exc)
+        if "print files" in error_msg.lower():
+            detailed_error = (
+                "This product variant doesn't have design files configured in Printful. "
+                "Your payment was successful, but we need to configure the design files. "
+                "Please contact support with your order details for assistance."
+            )
+            raise HTTPException(status_code=400, detail=detailed_error) from exc
+        else:
+            raise HTTPException(status_code=500, detail=f"Failed to create Printful order: {str(exc)}") from exc
 
     request.session["cart"] = []
     order_result = printful_response.get("result", {})
@@ -1007,7 +1017,17 @@ async def create_order(order_data: Dict[str, Any], request: Request):
             "order": order
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create order: {str(e)}")
+        # Check if it's the specific "no print files" error
+        error_msg = str(e)
+        if "print files" in error_msg.lower():
+            detailed_error = (
+                "This product variant doesn't have design files configured in Printful. "
+                "Please add design files to this product variant in your Printful dashboard "
+                f"or contact support. Details: {error_msg}"
+            )
+            raise HTTPException(status_code=400, detail=detailed_error) from e
+        else:
+            raise HTTPException(status_code=500, detail=f"Failed to create order: {str(e)}") from e
 
 if __name__ == "__main__":
     import uvicorn
