@@ -620,6 +620,9 @@ def get_products_from_printful() -> List[Product]:
         print(f"Found {len(printful_products)} products")
         products = []
         for printful_product in printful_products:
+            if printful_product.get("is_ignored"):
+                print(f"Skipping ignored product {printful_product.get('id')}")
+                continue
             try:
                 product = convert_printful_to_product(printful_product)
                 products.append(product)
