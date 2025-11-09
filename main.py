@@ -246,8 +246,37 @@ def compute_order_details(cart: List[Dict[str, Any]], recipient: RecipientInfo) 
         shipping_note = "Estimated"
         shipping_cost = 9.99
 
-    tax_amount = subtotal * ESTIMATED_TAX_RATE
-    tax_note = "Estimated"
+    # Use Printful's estimate API to get exact costs
+    try:
+        estimate_data = {
+            "recipient": printful_recipient,
+            "items": printful_items,
+            "shipping": shipping_rate.get("id") or "STANDARD",
+            "retail_costs": {
+                "currency": "USD",
+                "subtotal": str(round(subtotal, 2))
+            }
+        }
+
+        estimate_response = printful_client.estimate_costs(estimate_data)
+        estimate_result = estimate_response.get("result", {})
+
+        # Use Printful's actual costs
+        estimated_shipping = float(estimate_result.get("shipping", 0) or 0)
+        estimated_tax = float(estimate_result.get("tax", 0) or 0)
+        printful_subtotal = float(estimate_result.get("subtotal", subtotal) or subtotal)
+
+        shipping_cost = estimated_shipping
+        tax_amount = estimated_tax
+        tax_note = "Printful calculated"
+        shipping_note = shipping_rate.get("name", "Standard")
+
+    except Exception as exc:
+        print(f"Error getting cost estimate from Printful: {exc}")
+        # Fallback to original calculations
+        tax_amount = subtotal * ESTIMATED_TAX_RATE
+        tax_note = "Estimated"
+        shipping_note = "Estimated"
 
     total_cost = subtotal + shipping_cost + tax_amount
 
