@@ -88,8 +88,9 @@ class PrintfulClient:
 
     def estimate_costs(self, items: List[Dict]) -> Dict:
         """Get cost estimates for items"""
-        data = {"items": items}
-        return self._make_request("POST", "/orders/estimate", data=data)
+        # NOTE: This endpoint seems to not exist in the current API version
+        # Keeping method for compatibility but not implementing
+        raise NotImplementedError("Cost estimate endpoint not available in current API version")
 
     def get_countries(self) -> Dict:
         """Retrieve available countries from Printful"""
