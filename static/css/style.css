@@ -15,6 +15,12 @@ body {
     -wekit-font-smoothing: antiliased
     -moz-osx-font-smoothing: grayscale;
 }
+.container{
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 64px;
+    width: 100%;
+}
 
 /* Header styles */
 .header {
@@ -27,9 +33,9 @@ body {
 }
 
 .nav-container {
-    max-width: 1400px;
+    max-width: 1200px;
     margin: 0 auto;
-    padding: 0 40px;
+    padding: 0 64px;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -67,7 +73,7 @@ body {
     color: #F8F8F8; 
     font-weight: 500;
     font-size: 15px;
-    transition: opacity 0.2s; color 0.2s; 
+    transition: opacity 0.2s, color 0.2s; 
     opacity: 0.7;
 }
 
@@ -184,8 +190,8 @@ body {
 }
 
 .products-grid {
-    max-width: 1400px;
-    margin: 0 auto;
+    width: 100%;
+    margin: 0;
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
     gap: 60px;
@@ -631,6 +637,9 @@ body {
     .logo h1 {
         font-size: 24px;
     }
+    .container{
+        padding: 0 32px;
+    }
 
     .tagline {
         display: none;
@@ -692,7 +701,7 @@ body {
 }
 
 @media (max-width: 480px) {
-    .nav-container {
+    .container {
         padding: 0 20px;
     }
 
