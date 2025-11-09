@@ -150,6 +150,27 @@ def compute_order_details(cart: List[Dict[str, Any]], recipient: RecipientInfo) 
                 normalized[key] = _to_float(value, 0.0)
         return normalized
 
+    def summarize_costs(raw_costs: Dict[str, Any], fallback: Dict[str, float]) -> Dict[str, float]:
+        """Merge Printful cost data with a fallback breakdown."""
+        summary = fallback.copy()
+        if not raw_costs:
+            return summary
+
+        summary["currency"] = raw_costs.get("currency", summary.get("currency", "USD"))
+
+        def maybe_set(key: str, value: Optional[float]) -> None:
+            if value is None:
+                return
+            summary[key] = round(value, 2)
+
+        maybe_set("subtotal", raw_costs.get("subtotal"))
+        maybe_set("shipping", raw_costs.get("shipping"))
+        tax_value = raw_costs.get("tax", raw_costs.get("vat"))
+        maybe_set("tax", tax_value)
+        maybe_set("discount", raw_costs.get("discount"))
+        maybe_set("total", raw_costs.get("total"))
+        return summary
+
     printful_items = []
     cart_entries = []
     retail_subtotal = 0.0
@@ -310,6 +331,9 @@ def compute_order_details(cart: List[Dict[str, Any]], recipient: RecipientInfo) 
     printful_costs: Dict[str, Any] = {}
     printful_retail_costs: Dict[str, Any] = {}
     shipping_method_id = shipping_rate.get("id") if shipping_rate else None
+    customer_costs = retail_breakdown.copy()
+    production_cost_summary = retail_breakdown.copy()
+    cost_source = "estimated"
 
     try:
         estimate_response = printful_client.estimate_costs(
@@ -325,47 +349,54 @@ def compute_order_details(cart: List[Dict[str, Any]], recipient: RecipientInfo) 
         print(f"Error retrieving Printful cost estimate: {exc}")
 
     if printful_costs:
-        subtotal = round(printful_costs.get("subtotal", subtotal), 2)
-        shipping_cost = round(printful_costs.get("shipping", shipping_cost), 2)
-        tax_amount = round(
-            printful_costs.get("tax", printful_costs.get("vat", tax_amount)),
-            2
+        production_cost_summary = summarize_costs(
+            printful_costs,
+            production_cost_summary
         )
-        total_cost = round(
-            printful_costs.get("total", subtotal + shipping_cost + tax_amount),
-            2
-        )
-        tax_note = "Printful"
         if not shipping_rates:
             shipping_note = "Printful rate"
 
-        desired_subtotal = subtotal
-        if desired_subtotal > 0 and cart_entries:
-            current_line_total = round(sum(
-                entry["unit_price"] * entry["quantity"] for entry in cart_entries
-            ), 2)
-            adjusted_line_total = 0.0
+    if printful_retail_costs:
+        customer_costs = summarize_costs(printful_retail_costs, customer_costs)
+        tax_note = "Printful"
+        cost_source = "printful-retail"
+    elif printful_costs:
+        customer_costs = production_cost_summary.copy()
+        tax_note = "Printful"
+        cost_source = "printful"
 
-            if current_line_total > 0:
-                multiplier = desired_subtotal / current_line_total
+    subtotal = round(customer_costs.get("subtotal", retail_breakdown["subtotal"]), 2)
+    shipping_cost = round(customer_costs.get("shipping", retail_breakdown["shipping"]), 2)
+    tax_amount = round(customer_costs.get("tax", retail_breakdown["tax"]), 2)
+    total_cost = round(customer_costs.get("total", retail_breakdown["total"]), 2)
+
+    desired_subtotal = subtotal
+    if desired_subtotal > 0 and cart_entries:
+        current_line_total = round(sum(
+            entry["unit_price"] * entry["quantity"] for entry in cart_entries
+        ), 2)
+        adjusted_line_total = 0.0
+
+        if current_line_total > 0:
+            multiplier = desired_subtotal / current_line_total
+            for entry in cart_entries:
+                entry["unit_price"] = round(entry["unit_price"] * multiplier, 2)
+                adjusted_line_total += entry["unit_price"] * entry["quantity"]
+        else:
+            total_quantity = sum(entry["quantity"] for entry in cart_entries)
+            if total_quantity > 0:
+                per_unit = round(desired_subtotal / total_quantity, 2)
                 for entry in cart_entries:
-                    entry["unit_price"] = round(entry["unit_price"] * multiplier, 2)
+                    entry["unit_price"] = per_unit
                     adjusted_line_total += entry["unit_price"] * entry["quantity"]
-            else:
-                total_quantity = sum(entry["quantity"] for entry in cart_entries)
-                if total_quantity > 0:
-                    per_unit = round(desired_subtotal / total_quantity, 2)
-                    for entry in cart_entries:
-                        entry["unit_price"] = per_unit
-                        adjusted_line_total += entry["unit_price"] * entry["quantity"]
 
-            diff = round(desired_subtotal - adjusted_line_total, 2)
-            if abs(diff) >= 0.01 and cart_entries:
-                last_entry = cart_entries[-1]
-                per_unit_adjustment = diff / max(last_entry["quantity"], 1)
-                last_entry["unit_price"] = round(
-                    last_entry["unit_price"] + per_unit_adjustment, 2
-                )
+        diff = round(desired_subtotal - adjusted_line_total, 2)
+        if abs(diff) >= 0.01 and cart_entries:
+            last_entry = cart_entries[-1]
+            per_unit_adjustment = diff / max(last_entry["quantity"], 1)
+            last_entry["unit_price"] = round(
+                last_entry["unit_price"] + per_unit_adjustment, 2
+            )
     else:
         subtotal = round(subtotal, 2)
         shipping_cost = round(shipping_cost, 2)
@@ -379,10 +410,10 @@ def compute_order_details(cart: List[Dict[str, Any]], recipient: RecipientInfo) 
         "tax_amount": tax_amount,
         "tax_note": tax_note,
         "total": total_cost,
-        "cost_source": "printful" if printful_costs else "estimated",
-        "retail_subtotal": round(retail_subtotal, 2),
+        "cost_source": cost_source,
+        "retail_subtotal": customer_costs["subtotal"],
         "printful_costs": printful_costs,
-        "retail_costs": printful_retail_costs if printful_retail_costs else retail_breakdown,
+        "retail_costs": customer_costs,
         "shipping_method_id": shipping_method_id,
         "printful_recipient": printful_recipient,
         "shipping_rates": shipping_rates,
