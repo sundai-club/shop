@@ -213,6 +213,16 @@ def compute_order_details(cart: List[Dict[str, Any]], recipient: RecipientInfo) 
     if not printful_items:
         raise HTTPException(status_code=400, detail="No valid items in cart")
 
+    # Create separate items array for shipping rates API (different format)
+    shipping_items = []
+    for cart_item in cart:
+        if cart_item.get("variant_id"):
+            shipping_items.append({
+                "variant_id": str(cart_item["variant_id"]),  # Shipping API expects string
+                "quantity": cart_item["quantity"],
+                "value": str(cart_item.get("variant_price", "0.00"))  # Required field
+            })
+
     printful_recipient = build_printful_recipient(recipient)
 
     shipping_rates: List[Dict[str, Any]] = []
@@ -221,7 +231,7 @@ def compute_order_details(cart: List[Dict[str, Any]], recipient: RecipientInfo) 
     shipping_note = ""
 
     try:
-        rates_response = printful_client.get_shipping_rates(printful_recipient, printful_items)
+        rates_response = printful_client.get_shipping_rates(printful_recipient, shipping_items)
         shipping_rates = rates_response.get("result", [])
         if shipping_rates:
             shipping_rate = shipping_rates[0]
@@ -858,8 +868,7 @@ async def create_checkout_session(payload: CreateCheckoutSessionRequest, request
                 "tax": order_details["tax_amount"],
                 "total": order_details["total"]
             },
-            "confirm": True,
-            "external_id": checkout_session.id
+            "confirm": True
         },
         "summary": {
             "subtotal": order_details["subtotal"],

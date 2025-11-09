@@ -81,7 +81,8 @@ class PrintfulClient:
         """Get shipping rates for an order"""
         data = {
             "recipient": recipient,
-            "items": items
+            "items": items,
+            "currency": "USD"
         }
         return self._make_request("POST", "/shipping/rates", data=data)
 
