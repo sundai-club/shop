@@ -186,10 +186,20 @@ def compute_order_details(cart: List[Dict[str, Any]], recipient: RecipientInfo) 
         quantity = cart_item.get("quantity", 1)
         subtotal += unit_price * quantity
 
-        printful_items.append({
-            "variant_id": variant_id_int,
+        # Build Printful item with sync_variant_id if available
+        printful_item = {
             "quantity": quantity
-        })
+        }
+
+        # Add sync_variant_id if available (for synced products)
+        if sync_variant_id:
+            printful_item["sync_variant_id"] = int(sync_variant_id)
+            printful_item["source"] = "sync"
+        else:
+            # Fallback to variant_id for non-synced products
+            printful_item["variant_id"] = variant_id_int
+
+        printful_items.append(printful_item)
 
         cart_entries.append({
             "product_id": cart_item["product_id"],
@@ -893,6 +903,9 @@ async def complete_checkout(payload: CheckoutSuccessRequest, request: Request):
 
     printful_order = pending_order["printful_order"]
 
+    # Debug: Log the order data being sent to Printful
+    print(f"DEBUG: Sending order to Printful: {printful_order}")
+
     try:
         printful_response = printful_client.create_order(printful_order)
     except Exception as exc:
@@ -986,14 +999,24 @@ async def create_order(order_data: Dict[str, Any], request: Request):
     if not cart:
         raise HTTPException(status_code=400, detail="Cart is empty")
 
-    # Prepare items for Printful API
+    # Prepare items for Printful API (same logic as checkout)
     items = []
     for cart_item in cart:
-        if cart_item.get("variant_id"):
-            items.append({
-                "variant_id": cart_item["variant_id"],
+        if cart_item.get("variant_id") or cart_item.get("sync_variant_id"):
+            # Build Printful item with sync_variant_id if available
+            item = {
                 "quantity": cart_item["quantity"]
-            })
+            }
+
+            # Add sync_variant_id if available (for synced products)
+            if cart_item.get("sync_variant_id"):
+                item["sync_variant_id"] = cart_item["sync_variant_id"]
+                item["source"] = "sync"
+            else:
+                # Fallback to variant_id for non-synced products
+                item["variant_id"] = cart_item["variant_id"]
+
+            items.append(item)
 
     if not items:
         raise HTTPException(status_code=400, detail="No valid items in cart")
