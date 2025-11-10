@@ -18,7 +18,9 @@ const closeCart = document.getElementById('closeCart');
 const cartCount = document.getElementById('cartCount');
 const cartItems = document.getElementById('cartItems');
 const cartTotal = document.getElementById('cartTotal');
-const cartOverlay = document.getElementById('cartOverlay');
+const overlay = document.createElement('div');
+overlay.className = 'overlay';
+document.body.appendChild(overlay);
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', () => {
@@ -33,7 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function setupEventListeners() {
     cartBtn.addEventListener('click', openCart);
     closeCart.addEventListener('click', closeCartSidebar);
-    cartOverlay.addEventListener('click', closeCartSidebar);
+    overlay.addEventListener('click', closeCartSidebar);
 }
 
 async function initializeStripe() {
@@ -115,105 +117,58 @@ async function loadCart() {
     }
 }
 
-// Get category info for products (extra-shop inspired)
-function getCategoryInfo(product) {
-    const name = product.name.toLowerCase();
-    const description = product.description.toLowerCase();
-
-    if (name.includes('ai') || name.includes('intelligence') || description.includes('ai')) {
-        return { class: 'category-ai', emoji: '🤖', label: 'AI' };
-    } else if (name.includes('hack') || name.includes('code') || description.includes('developer')) {
-        return { class: 'category-hacker', emoji: '💻', label: 'Hacker' };
-    } else if (name.includes('mountain') || name.includes('peak') || description.includes('summit')) {
-        return { class: 'category-mountain', emoji: '⛰️', label: 'Mountain' };
-    } else if (name.includes('community') || name.includes('team') || description.includes('together')) {
-        return { class: 'category-community', emoji: '👥', label: 'Community' };
-    } else if (name.includes('growth') || name.includes('scale') || description.includes('optimization')) {
-        return { class: 'category-growth', emoji: '🚀', label: 'Growth' };
-    } else if (name.includes('innovation') || name.includes('future') || description.includes('breakthrough')) {
-        return { class: 'category-innovation', emoji: '✨', label: 'Innovation' };
-    } else if (name.includes('creative') || name.includes('design') || description.includes('art')) {
-        return { class: 'category-creative', emoji: '🧦', label: 'Creative' };
-    } else {
-        return { class: 'category-hacker', emoji: '🍨', label: 'SundAI' };
-    }
-}
-
-// Render products with extra-shop inspired design
+// Render products
 function renderProducts(productsToRender) {
     if (!productsToRender || productsToRender.length === 0) {
-        productsGrid.innerHTML = '<div class="loading text-center text-gray-500">No products found</div>';
+        productsGrid.innerHTML = '<div class="loading">No products found</div>';
         return;
     }
 
-    productsGrid.innerHTML = productsToRender.map(product => {
-        const category = getCategoryInfo(product);
-        return `
-            <div class="product-card" data-product-id="${product.id}">
-                <div class="relative mb-4">
-                    <div class="aspect-square bg-gray-100 rounded-lg overflow-hidden">
-                        <img src="${product.image_url}" alt="${product.name}"
-                             class="w-full h-full object-cover"
-                             onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=\\"w-full h-full flex items-center justify-center text-gray-400\\">${category.emoji}</div>';">
-                    </div>
-                    <div class="category-badge ${category.class}">
-                        <span class="mr-2">${category.emoji}</span>${category.label}
-                    </div>
+    productsGrid.innerHTML = productsToRender.map(product => `
+        <div class="product-card" data-product-id="${product.id}">
+            <div class="product-image">
+                <img src="${product.image_url}" alt="${product.name}" onerror="this.style.display='none'; this.parentElement.innerHTML='Product Image';">
+            </div>
+            <div class="product-info">
+                <h3 class="product-name">${product.name}</h3>
+                <p class="product-description">${product.description}</p>
+                <div class="product-price">
+                    ${product.price_range ? product.price_range : `$${product.price.toFixed(2)}`}
                 </div>
-                <div class="product-info">
-                    <h3 class="product-title">${product.name}</h3>
-                    <p class="product-description">${product.description}</p>
-                    <div class="product-price">
-                        ${product.price_range ? product.price_range : `$${product.price.toFixed(2)}`}
-                    </div>
-                    <div class="product-actions">
-                        ${product.sizes && product.sizes.length > 1 ? `
-                            <div class="size-selector mb-4">
-                                <label class="block text-sm font-medium text-gray-700 mb-2">Size:</label>
-                                <div class="size-options flex flex-wrap gap-2">
-                                    ${product.sizes.map((size, index) => {
-                                        const variant = product.variants?.find(v => v.name === size);
-                                        let variantPrice = variant ? (variant.retail_price || variant.price / 100) : product.price;
-                                        variantPrice = parseFloat(variantPrice) || product.price;
-                                        return `
-                                            <button class="size-option px-3 py-2 border border-gray-300 rounded-md text-sm hover:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                                                    data-size="${size}"
-                                                    data-price="${variantPrice.toFixed(2)}"
-                                                    onclick="selectSize(this, ${product.id})">
-                                                ${size}
-                                                <span class="variant-price block text-xs text-gray-500">$${variantPrice.toFixed(2)}</span>
-                                            </button>
-                                        `;
-                                    }).join('')}
-                                </div>
+                <div class="product-actions">
+                    ${product.sizes && product.sizes.length > 1 ? `
+                        <div class="size-selector">
+                            <label>Size:</label>
+                            <div class="size-options">
+                                ${product.sizes.map((size, index) => {
+                                    const variant = product.variants?.find(v => v.name === size);
+                                    let variantPrice = variant ? (variant.retail_price || variant.price / 100) : product.price;
+                                    variantPrice = parseFloat(variantPrice) || product.price;
+                                    return `
+                                        <button class="size-option" data-size="${size}" data-price="${variantPrice.toFixed(2)}" onclick="selectSize(this, ${product.id})">
+                                            ${size}
+                                            <span class="variant-price">$${variantPrice.toFixed(2)}</span>
+                                        </button>
+                                    `;
+                                }).join('')}
                             </div>
-                        ` : ''}
-                        <button class="add-to-cart-btn w-full btn-primary"
-                                onclick="addToCart(${product.id})"
-                                ${!product.in_stock ? 'disabled' : ''}>
-                            ${product.in_stock ? 'Add to Cart' : 'Out of Stock'}
-                        </button>
-                    </div>
+                        </div>
+                    ` : ''}
+                    <button class="add-to-cart-btn" onclick="addToCart(${product.id})" ${!product.in_stock ? 'disabled' : ''}>
+                        ${product.in_stock ? 'Add to Cart' : 'Out of Stock'}
+                    </button>
                 </div>
             </div>
-        `;
-    }).join('');
+        </div>
+    `).join('');
 }
 
-// Select size with extra-shop inspired styling
+// Select size
 function selectSize(element, productId) {
     const productCard = document.querySelector(`[data-product-id="${productId}"]`);
     const sizeOptions = productCard.querySelectorAll('.size-option');
-
-    // Remove selected state from all options
-    sizeOptions.forEach(option => {
-        option.classList.remove('bg-primary-600', 'text-white', 'border-primary-600');
-        option.classList.add('border-gray-300');
-    });
-
-    // Add selected state to clicked option
-    element.classList.remove('border-gray-300');
-    element.classList.add('bg-primary-600', 'text-white', 'border-primary-600');
+    sizeOptions.forEach(option => option.classList.remove('selected'));
+    element.classList.add('selected');
 }
 
 // Add to cart
@@ -292,7 +247,7 @@ function updateCartUI() {
     cartCount.textContent = totalItems;
 
     if (Object.keys(groupedCart).length === 0) {
-        cartItems.innerHTML = '<div class="text-center text-gray-500 py-8">Your cart is empty</div>';
+        cartItems.innerHTML = '<div class="empty-cart">Your cart is empty</div>';
         cartTotal.textContent = '0.00';
         return;
     }
@@ -304,23 +259,23 @@ function updateCartUI() {
         const item = groupedCart[key];
         const itemPrice = item.variant_price || item.product.price;
         return `
-            <div class="cart-item">
-                <img src="${item.product.image_url}" alt="${item.product.name}"
-                     class="cart-item-image"
-                     onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=\\"w-full h-full flex items-center justify-center bg-gray-100 rounded\\">📦</div>';">
-                <div class="cart-item-details">
-                    <div class="cart-item-title">${item.product.name}</div>
-                    <div class="text-sm text-gray-500 mb-1">Size: ${item.size}</div>
-                    <div class="cart-item-price mb-2">$${(itemPrice * item.quantity).toFixed(2)}</div>
-                    <div class="cart-item-quantity">
-                        <button class="quantity-btn" onclick="updateQuantity(${displayIndex}, -1)">−</button>
-                        <span class="mx-3 font-medium">${item.quantity}</span>
-                        <button class="quantity-btn" onclick="updateQuantity(${displayIndex}, 1)">+</button>
-                    </div>
-                    <button class="text-sm text-red-600 hover:text-red-800 mt-2" onclick="removeFromCart(${displayIndex})">Remove</button>
-                </div>
+        <div class="cart-item">
+            <div class="cart-item-image">
+                <img src="${item.product.image_url}" alt="${item.product.name}" onerror="this.style.display='none'; this.parentElement.innerHTML='📦';">
             </div>
-        `;
+            <div class="cart-item-details">
+                <div class="cart-item-name">${item.product.name}</div>
+                <div class="cart-item-size">Size: ${item.size}</div>
+                <div class="cart-item-price">$${(itemPrice * item.quantity).toFixed(2)}</div>
+                <div class="cart-item-quantity">
+                    <button class="quantity-btn" onclick="updateQuantity(${displayIndex}, -1)">-</button>
+                    <span class="quantity-display">${item.quantity}</span>
+                    <button class="quantity-btn" onclick="updateQuantity(${displayIndex}, 1)">+</button>
+                </div>
+                <button class="remove-item" onclick="removeFromCart(${displayIndex})">Remove</button>
+            </div>
+        </div>
+    `;
     }).join('');
 
     const total = sortedKeys.reduce((sum, key) => {
@@ -452,14 +407,14 @@ async function removeFromCart(displayIndex) {
 
 // Cart controls
 function openCart() {
-    cartSidebar.classList.remove('hidden');
-    cartOverlay.classList.remove('hidden');
+    cartSidebar.classList.add('open');
+    overlay.classList.add('active');
     document.body.style.overflow = 'hidden';
 }
 
 function closeCartSidebar() {
-    cartSidebar.classList.add('hidden');
-    cartOverlay.classList.add('hidden');
+    cartSidebar.classList.remove('open');
+    overlay.classList.remove('active');
     document.body.style.overflow = '';
 }
 

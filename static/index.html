@@ -5,31 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SundAI Merch Shop</title>
     <link rel="stylesheet" href="/static/css/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="icon" type="image/png" sizes="64x64" href="/static/favicon.png">
 </head>
-<body class="bg-gray-50 text-gray-900">
-    <!-- Header with extra-shop inspired navigation -->
-    <header class="nav-header">
-        <nav class="container-custom">
-            <div class="flex items-center justify-between h-16">
-                <div class="flex items-center space-x-4">
-                    <div class="flex items-center">
-                        <span class="text-2xl mr-3">🍨</span>
-                        <div>
-                            <h1 class="text-xl font-bold font-mono">SundAI</h1>
-                            <span class="text-xs text-gray-500 font-mono">Merch Shop</span>
-                        </div>
-                    </div>
+<body>
+    <header class="header">
+        <nav class="nav">
+            <div class="nav-container">
+                <div class="logo">
+                    <h1>SundAI</h1>
+                    <span class="tagline">Merch Shop</span>
                 </div>
-                <div class="flex items-center space-x-6">
-                    <button class="cart-btn" id="cartBtn" class="relative p-2 text-gray-600 hover:text-gray-900 transition-colors">
+                <div class="nav-menu">
+                    <button class="cart-btn" id="cartBtn">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <circle cx="9" cy="21" r="1"></circle>
                             <circle cx="20" cy="21" r="1"></circle>
                             <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
                         </svg>
-                        <span class="cart-count absolute -top-1 -right-1 bg-primary-600 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center" id="cartCount">0</span>
+                        <span class="cart-count" id="cartCount">0</span>
                     </button>
                 </div>
             </div>
@@ -37,95 +31,54 @@
     </header>
 
     <main>
-        <!-- Hero section with extra-shop inspired design -->
-        <section class="hero bg-gradient-to-br from-primary-50 to-secondary-50 py-24">
-            <div class="container-custom">
-                <div class="text-center max-w-4xl mx-auto">
-                    <h2 class="text-4xl sm:text-5xl font-bold text-gray-900 mb-6">
-                        Building & Launching AI Prototypes Every Sunday
-                    </h2>
-                    <p class="text-lg sm:text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed">
-                        High-quality merchandise for the AI builder community. Clean designs, premium materials, and a commitment to innovation.
-                    </p>
+        <section class="hero">
+            <div class="hero-content">
+                <h2>Building & Launching AI Prototypes Every Sunday.</h2>
+                <p>High-quality merchandise for the AI builder community. Clean designs, premium materials, and a commitment to innovation.</p>
+            </div>
+        </section>
+
+        <section class="institutions">
+            <div class="institutions-content">
+                <div class="institutions-label">Trusted by builders at leading institutions</div>
+                <div class="institutions-logos">
+                    <div class="institution-logo">MIT</div>
+                    <div class="institution-logo">Harvard</div>
+                    <div class="institution-logo">Stanford</div>
+                    <div class="institution-logo">Carnegie Mellon</div>
                 </div>
             </div>
         </section>
 
-        <!-- Institutions section with extra-shop card style -->
-        <section class="institutions py-16 bg-white">
-            <div class="container-custom">
-                <div class="text-center mb-12">
-                    <div class="text-sm font-medium text-gray-500 uppercase tracking-wider mb-8">
-                        Trusted by builders at leading institutions
-                    </div>
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-8">
-                        <div class="institution-logo text-lg font-mono font-semibold text-gray-700 bg-gray-50 rounded-lg p-4 text-center">
-                            MIT
-                        </div>
-                        <div class="institution-logo text-lg font-mono font-semibold text-gray-700 bg-gray-50 rounded-lg p-4 text-center">
-                            Harvard
-                        </div>
-                        <div class="institution-logo text-lg font-mono font-semibold text-gray-700 bg-gray-50 rounded-lg p-4 text-center">
-                            Stanford
-                        </div>
-                        <div class="institution-logo text-lg font-mono font-semibold text-gray-700 bg-gray-50 rounded-lg p-4 text-center">
-                            Carnegie Mellon
-                        </div>
-                    </div>
-                </div>
+  
+        <section class="products" id="products">
+            <div class="products-grid" id="productsGrid">
+                <!-- Products will be dynamically loaded here -->
             </div>
         </section>
 
-        <!-- Products section with extra-shop grid layout -->
-        <section class="products py-16" id="products">
-            <div class="container-custom">
-                <div class="products-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6" id="productsGrid">
-                    <!-- Products will be dynamically loaded here -->
-                </div>
+        <section class="cart-sidebar" id="cartSidebar">
+            <div class="cart-header">
+                <h3>Shopping Cart</h3>
+                <button class="close-cart" id="closeCart">×</button>
             </div>
-        </section>
-
-        <!-- Shopping cart sidebar with extra-shop styling -->
-        <section class="cart-sidebar hidden" id="cartSidebar">
-            <div class="h-full flex flex-col">
-                <div class="flex items-center justify-between p-6 border-b border-gray-200">
-                    <h3 class="text-lg font-semibold">Shopping Cart</h3>
-                    <button class="close-cart p-2 hover:bg-gray-100 rounded-lg transition-colors" id="closeCart">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <line x1="18" y1="6" x2="6" y2="18"></line>
-                            <line x1="6" y1="6" x2="18" y2="18"></line>
-                        </svg>
-                    </button>
+            <div class="cart-items" id="cartItems">
+                <!-- Cart items will be dynamically loaded here -->
+            </div>
+            <div class="cart-footer">
+                <div class="cart-total">
+                    <span>Total: $<span id="cartTotal">0.00</span></span>
                 </div>
-                <div class="flex-1 overflow-y-auto p-6">
-                    <div class="cart-items space-y-4" id="cartItems">
-                        <!-- Cart items will be dynamically loaded here -->
-                    </div>
-                </div>
-                <div class="border-t border-gray-200 p-6">
-                    <div class="cart-total mb-4">
-                        <div class="flex justify-between text-lg font-semibold">
-                            <span>Total:</span>
-                            <span>$<span id="cartTotal">0.00</span></span>
-                        </div>
-                    </div>
-                    <button class="checkout-btn w-full btn-primary">Checkout</button>
-                </div>
+                <button class="checkout-btn">Checkout</button>
             </div>
         </section>
     </main>
 
-    <!-- Footer with extra-shop inspired dark theme -->
-    <footer class="footer bg-gray-900 text-white py-12">
-        <div class="container-custom">
-            <div class="text-center">
-                <p class="text-gray-400">&copy; 2025 SundAI. Building AI prototypes every Sunday.</p>
-            </div>
+    <footer class="footer">
+        <div class="footer-content">
+            <p>&copy; 2025 SundAI. Building AI prototypes every Sunday.</p>
         </div>
     </footer>
-
-    <!-- Overlay for cart sidebar -->
-    <div class="cart-overlay fixed inset-0 bg-black bg-opacity-50 hidden z-40" id="cartOverlay"></div>
 
     <script src="https://js.stripe.com/v3"></script>
     <script src="/static/js/app.js"></script>
