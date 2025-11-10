@@ -527,38 +527,40 @@ async function showShippingCalculator() {
 
     const selectedCountry = lastRecipientDetails?.country || 'US';
     const countryOptions = getCountryOptionsMarkup(selectedCountry);
+    const labelStyle =
+        'display: block; margin-bottom: 6px; font-weight: 600; color: #0a0a0a; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;';
 
     modal.innerHTML = `
         <div style="background: white; padding: 24px; border-radius: 8px; max-width: 500px; width: 90%; max-height: 95vh; overflow-y: auto;">
             <h3 style="margin-bottom: 24px; color: #0a0a0a;">Calculate Total Cost</h3>
             <form id="shippingForm">
                 <div style="margin-bottom: 16px;">
-                    <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #0a0a0a;">Full Name</label>
+                    <label style="${labelStyle}">Full Name</label>
                     <input type="text" name="name" required style="width: 100%; padding: 12px; border: 1px solid #f0f0f0; border-radius: 4px;">
                 </div>
                 <div style="margin-bottom: 16px;">
-                    <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #0a0a0a;">Email</label>
+                    <label style="${labelStyle}">Email</label>
                     <input type="email" name="email" required style="width: 100%; padding: 12px; border: 1px solid #f0f0f0; border-radius: 4px;">
                 </div>
                 <div style="margin-bottom: 16px;">
-                    <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #0a0a0a;">Address</label>
+                    <label style="${labelStyle}">Address</label>
                     <input type="text" name="address1" required style="width: 100%; padding: 12px; border: 1px solid #f0f0f0; border-radius: 4px;">
                 </div>
                 <div style="margin-bottom: 16px;">
-                    <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #0a0a0a;">City</label>
+                    <label style="${labelStyle}">City</label>
                     <input type="text" name="city" required style="width: 100%; padding: 12px; border: 1px solid #f0f0f0; border-radius: 4px;">
                 </div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px;">
                     <div>
-                        <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #0a0a0a;">State/Province</label>
+                        <label style="${labelStyle}">State/Province</label>
                         <input type="text" name="state" required style="width: 100%; padding: 12px; border: 1px solid #f0f0f0; border-radius: 4px;">
                     </div>
                     <div>
-                        <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #0a0a0a;">ZIP/Postal Code</label>
+                        <label style="${labelStyle}">ZIP/Postal Code</label>
                         <input type="text" name="zip" required style="width: 100%; padding: 12px; border: 1px solid #f0f0f0; border-radius: 4px;">
                     </div>
                     <div>
-                        <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #0a0a0a;">Country</label>
+                        <label style="${labelStyle}">Country</label>
                         <select name="country" required style="width: 100%; padding: 12px; border: 1px solid #f0f0f0; border-radius: 4px;">
                             ${countryOptions}
                         </select>
