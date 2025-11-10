@@ -20,11 +20,6 @@ const closeCart = document.getElementById('closeCart');
 const cartCount = document.getElementById('cartCount');
 const cartItems = document.getElementById('cartItems');
 const cartTotal = document.getElementById('cartTotal');
-const navTabs = document.querySelectorAll('.nav-tab');
-const pageSections = {
-    shop: document.getElementById('shopSection'),
-    about: document.getElementById('aboutSection')
-};
 const overlay = document.createElement('div');
 overlay.className = 'overlay';
 document.body.appendChild(overlay);
@@ -36,8 +31,6 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     initializeStripe();
     loadCountries();
-    setupNavigation();
-    setupAnchorLinks();
 });
 
 // Setup event listeners
@@ -45,63 +38,6 @@ function setupEventListeners() {
     cartBtn.addEventListener('click', openCart);
     closeCart.addEventListener('click', closeCartSidebar);
     overlay.addEventListener('click', closeCartSidebar);
-}
-
-function setupNavigation() {
-    if (!navTabs.length) {
-        return;
-    }
-    navTabs.forEach(tab => {
-        tab.addEventListener('click', () => {
-            const targetSection = tab.dataset.section || 'shop';
-            setActiveSection(targetSection);
-        });
-    });
-    setActiveSection('shop');
-}
-
-function setupAnchorLinks() {
-    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-        anchor.addEventListener('click', (event) => {
-            const targetId = anchor.getAttribute('href');
-            if (!targetId || targetId === '#') {
-                return;
-            }
-            const targetEl = document.querySelector(targetId);
-            if (!targetEl) {
-                return;
-            }
-            event.preventDefault();
-            if (targetId === '#shopSection') {
-                setActiveSection('shop');
-            } else if (targetId === '#aboutSection') {
-                setActiveSection('about');
-            }
-            targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        });
-    });
-}
-
-function setActiveSection(sectionKey) {
-    Object.entries(pageSections).forEach(([key, section]) => {
-        if (!section) {
-            return;
-        }
-        const isActive = key === sectionKey;
-        section.classList.toggle('is-hidden', !isActive);
-        section.setAttribute('aria-hidden', String(!isActive));
-    });
-
-    navTabs.forEach(tab => {
-        const target = tab.dataset.section || 'shop';
-        const isActive = target === sectionKey;
-        tab.classList.toggle('is-active', isActive);
-        tab.setAttribute('aria-pressed', String(isActive));
-    });
-
-    if (sectionKey === 'shop' && pageSections.shop) {
-        pageSections.shop.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
 }
 
 async function initializeStripe() {
