@@ -10,6 +10,8 @@ let checkoutButtonOriginalLabel = 'Proceed to Checkout';
 let printfulCountries = [];
 let countriesLoaded = false;
 
+const CARD_ACCENTS = ['accent-blue', 'accent-pink', 'accent-yellow', 'accent-green', 'accent-purple', 'accent-cyan'];
+
 // DOM elements
 const productsGrid = document.getElementById('productsGrid');
 const cartBtn = document.getElementById('cartBtn');
@@ -18,6 +20,11 @@ const closeCart = document.getElementById('closeCart');
 const cartCount = document.getElementById('cartCount');
 const cartItems = document.getElementById('cartItems');
 const cartTotal = document.getElementById('cartTotal');
+const navTabs = document.querySelectorAll('.nav-tab');
+const pageSections = {
+    shop: document.getElementById('shopSection'),
+    about: document.getElementById('aboutSection')
+};
 const overlay = document.createElement('div');
 overlay.className = 'overlay';
 document.body.appendChild(overlay);
@@ -29,6 +36,8 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     initializeStripe();
     loadCountries();
+    setupNavigation();
+    setupAnchorLinks();
 });
 
 // Setup event listeners
@@ -36,6 +45,63 @@ function setupEventListeners() {
     cartBtn.addEventListener('click', openCart);
     closeCart.addEventListener('click', closeCartSidebar);
     overlay.addEventListener('click', closeCartSidebar);
+}
+
+function setupNavigation() {
+    if (!navTabs.length) {
+        return;
+    }
+    navTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const targetSection = tab.dataset.section || 'shop';
+            setActiveSection(targetSection);
+        });
+    });
+    setActiveSection('shop');
+}
+
+function setupAnchorLinks() {
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', (event) => {
+            const targetId = anchor.getAttribute('href');
+            if (!targetId || targetId === '#') {
+                return;
+            }
+            const targetEl = document.querySelector(targetId);
+            if (!targetEl) {
+                return;
+            }
+            event.preventDefault();
+            if (targetId === '#shopSection') {
+                setActiveSection('shop');
+            } else if (targetId === '#aboutSection') {
+                setActiveSection('about');
+            }
+            targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    });
+}
+
+function setActiveSection(sectionKey) {
+    Object.entries(pageSections).forEach(([key, section]) => {
+        if (!section) {
+            return;
+        }
+        const isActive = key === sectionKey;
+        section.classList.toggle('is-hidden', !isActive);
+        section.setAttribute('aria-hidden', String(!isActive));
+    });
+
+    navTabs.forEach(tab => {
+        const target = tab.dataset.section || 'shop';
+        const isActive = target === sectionKey;
+        tab.classList.toggle('is-active', isActive);
+        tab.setAttribute('aria-pressed', String(isActive));
+    });
+
+    if (sectionKey === 'shop' && pageSections.shop) {
+        pageSections.shop.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
 }
 
 async function initializeStripe() {
@@ -124,8 +190,10 @@ function renderProducts(productsToRender) {
         return;
     }
 
-    productsGrid.innerHTML = productsToRender.map(product => `
-        <div class="product-card" data-product-id="${product.id}">
+    productsGrid.innerHTML = productsToRender.map((product, index) => {
+        const accentClass = CARD_ACCENTS[index % CARD_ACCENTS.length];
+        return `
+        <div class="product-card ${accentClass}" data-product-id="${product.id}">
             <div class="product-image">
                 <img src="${product.image_url}" alt="${product.name}" onerror="this.style.display='none'; this.parentElement.innerHTML='Product Image';">
             </div>
@@ -160,7 +228,8 @@ function renderProducts(productsToRender) {
                 </div>
             </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
 }
 
 // Select size
@@ -408,12 +477,14 @@ async function removeFromCart(displayIndex) {
 // Cart controls
 function openCart() {
     cartSidebar.classList.add('open');
+    cartSidebar.setAttribute('aria-hidden', 'false');
     overlay.classList.add('active');
     document.body.style.overflow = 'hidden';
 }
 
 function closeCartSidebar() {
     cartSidebar.classList.remove('open');
+    cartSidebar.setAttribute('aria-hidden', 'true');
     overlay.classList.remove('active');
     document.body.style.overflow = '';
 }
@@ -464,28 +535,19 @@ function showNotification(message, type = 'success') {
     }, 3000);
 }
 
-// Handle navigation
-document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-    anchor.addEventListener('click', function (e) {
-        e.preventDefault();
-
-        // Scroll to products section
-        document.querySelector('.products').scrollIntoView({
-            behavior: 'smooth'
-        });
-    });
-});
-
 // Handle checkout
-document.querySelector('.checkout-btn').addEventListener('click', () => {
-    if (cart.length === 0) {
-        showNotification('Your cart is empty', 'error');
-        return;
-    }
+const checkoutTrigger = document.querySelector('.checkout-btn');
+if (checkoutTrigger) {
+    checkoutTrigger.addEventListener('click', () => {
+        if (cart.length === 0) {
+            showNotification('Your cart is empty', 'error');
+            return;
+        }
 
-    // Show shipping calculator modal
-    showShippingCalculator();
-});
+        // Show shipping calculator modal
+        showShippingCalculator();
+    });
+}
 
 // Show shipping calculator modal
 async function showShippingCalculator() {
