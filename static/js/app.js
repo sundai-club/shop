@@ -235,7 +235,17 @@ function renderProducts(productsToRender) {
 // Select size
 function selectSize(element, productId) {
     const productCard = document.querySelector(`[data-product-id="${productId}"]`);
+    if (!productCard) {
+        return;
+    }
     const sizeOptions = productCard.querySelectorAll('.size-option');
+    const isAlreadySelected = element.classList.contains('selected');
+
+    if (isAlreadySelected) {
+        element.classList.remove('selected');
+        return;
+    }
+
     sizeOptions.forEach(option => option.classList.remove('selected'));
     element.classList.add('selected');
 }
