@@ -11,6 +11,7 @@ import uuid
 from dotenv import load_dotenv
 import stripe
 from printful_client import printful_client
+from supabase_client import supabase_client
 
 load_dotenv()
 
@@ -1036,6 +1037,59 @@ async def create_checkout_session(payload: CreateCheckoutSessionRequest, request
     selected_shipping = order_details.get("selected_shipping_rate") or {}
     shipping_method = order_details.get("shipping_method_id") or selected_shipping.get("id") or "STANDARD"
 
+    # Log order to Supabase
+    order_log_data = {
+        "stripe_checkout_session_id": checkout_session.id,
+        "stripe_payment_intent_id": checkout_session.payment_intent,
+        "stripe_customer_id": checkout_session.customer,
+        "app_session_id": request.session.get("session_id"),
+        "customer_name": payload.recipient.name,
+        "customer_email": payload.recipient.email,
+        "customer_phone": payload.recipient.phone,
+        "shipping_address": {
+            "name": payload.recipient.name,
+            "address1": payload.recipient.address1,
+            "city": payload.recipient.city,
+            "state": payload.recipient.state,
+            "zip": payload.recipient.zip,
+            "country": recipient_country,
+            "phone": payload.recipient.phone
+        },
+        "order_status": "pending",
+        "payment_status": "pending",
+        "subtotal": order_details["subtotal"],
+        "shipping_cost": order_details["shipping_cost"],
+        "tax_amount": order_details["tax_amount"],
+        "total_amount": order_details["total"],
+        "items": order_details["cart_entries"],
+        "printful_order_data": {
+            "recipient": order_details["printful_recipient"],
+            "items": order_details["printful_items"],
+            "shipping": shipping_method
+        },
+        "printful_cost_data": order_details.get("printful_costs"),
+        "printful_retail_costs": order_details.get("retail_costs"),
+        "printful_shipping_method_id": order_details.get("shipping_method_id"),
+        "shipping_note": order_details["shipping_note"],
+        "tax_note": order_details["tax_note"],
+        "cost_source": order_details.get("cost_source", "estimated"),
+        "metadata": {
+            "app_session_id": request.session.get("session_id", ""),
+            "shipping_note": order_details["shipping_note"],
+            "tax_note": order_details["tax_note"]
+        }
+    }
+
+    # Log the order to Supabase asynchronously (don't fail if Supabase is down)
+    try:
+        supabase_order_id = supabase_client.log_order(order_log_data)
+        if supabase_order_id:
+            print(f"Order logged to Supabase: {supabase_order_id}")
+        else:
+            print("Warning: Failed to log order to Supabase")
+    except Exception as e:
+        print(f"Warning: Error logging order to Supabase: {e}")
+
     request.session["pending_order"] = {
         "checkout_session_id": checkout_session.id,
         "printful_order": {
@@ -1121,6 +1175,34 @@ async def complete_checkout(payload: CheckoutSuccessRequest, request: Request):
         "summary": order_summary
     }
     request.session["pending_order"] = pending_order_record
+
+    # Update order in Supabase with fulfillment details
+    try:
+        supabase_updates = {
+            "order_status": "processing",
+            "payment_status": "paid",
+            "printful_order_id": order_result.get("id"),
+            "paid_at": "NOW()",  # This will be handled by the database trigger
+            "fulfilled_at": "NOW()",  # This will be handled by the database trigger
+            "printful_order_data": {
+                "printful_response": printful_response,
+                "order_result": order_result
+            }
+        }
+
+        # Get the order from Supabase using Stripe session ID
+        existing_order = supabase_client.get_order_by_stripe_session(payload.session_id)
+        if existing_order:
+            supabase_order_id = existing_order.get("id")
+            success = supabase_client.update_order_status(supabase_order_id, supabase_updates)
+            if success:
+                print(f"Order {supabase_order_id} updated in Supabase with fulfillment details")
+            else:
+                print("Warning: Failed to update order in Supabase")
+        else:
+            print("Warning: Could not find order in Supabase to update")
+    except Exception as e:
+        print(f"Warning: Error updating order in Supabase: {e}")
 
     return {
         "message": "Order fulfilled successfully",
@@ -1241,6 +1323,50 @@ async def create_order(order_data: Dict[str, Any], request: Request):
             raise HTTPException(status_code=400, detail=detailed_error) from e
         else:
             raise HTTPException(status_code=500, detail=f"Failed to create order: {str(e)}") from e
+
+@app.get("/api/orders/{email}")
+async def get_customer_orders(email: str):
+    """Get all orders for a customer by email"""
+    try:
+        orders = supabase_client.get_orders_by_email(email)
+        return {"orders": orders, "count": len(orders)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get orders: {str(e)}")
+
+@app.get("/api/orders/session/{session_id}")
+async def get_orders_by_session(session_id: str):
+    """Get orders by app session ID"""
+    try:
+        # This would need to be implemented in supabase_client.py
+        client = supabase_client.service_client or supabase_client.client
+        if not client:
+            raise HTTPException(status_code=500, detail="Supabase client not available")
+
+        response = client.table("orders").select("*").eq("app_session_id", session_id).order("created_at", desc=True).execute()
+        orders = response.data if response.data else []
+
+        return {"orders": orders, "count": len(orders)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get orders: {str(e)}")
+
+@app.get("/api/order/{order_id}")
+async def get_order_by_id(order_id: str):
+    """Get specific order by UUID"""
+    try:
+        client = supabase_client.service_client or supabase_client.client
+        if not client:
+            raise HTTPException(status_code=500, detail="Supabase client not available")
+
+        response = client.table("orders").select("*").eq("id", order_id).execute()
+
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Order not found")
+
+        return {"order": response.data[0]}
+    except Exception as e:
+        if "Order not found" in str(e):
+            raise
+        raise HTTPException(status_code=500, detail=f"Failed to get order: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
